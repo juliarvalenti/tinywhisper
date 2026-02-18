@@ -4,6 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <mach-o/dyld.h>
+#include <limits.h>
 
 /* Resolve PYTHON_PREFIX at compile time via -DPYTHON_PREFIX="..." */
 #ifndef PYTHON_PREFIX
@@ -31,14 +33,31 @@ int main(int argc, char *argv[]) {
     Py_Initialize();
 
     /*
-     * When built from a venv (e.g. uv), PYTHONHOME points at the base
-     * Python (for stdlib) but packages live in the venv's site-packages.
-     * Use site.addsitedir() so .pth files are processed (editable installs).
-     * VENV_SITE_PACKAGES is passed via -D at compile time when applicable.
+     * Resolve bundled site-packages relative to the binary:
+     *   <binary>/../Resources/site-packages
+     * This avoids baking an absolute path that may live under ~/Documents/
+     * (which would trigger a macOS TCC prompt).
      */
-#ifdef VENV_SITE_PACKAGES
-    PyRun_SimpleString("import site; site.addsitedir('" VENV_SITE_PACKAGES "')");
-#endif
+    {
+        char exe_path[PATH_MAX];
+        uint32_t exe_size = sizeof(exe_path);
+        if (_NSGetExecutablePath(exe_path, &exe_size) == 0) {
+            /* Strip the binary filename to get the MacOS/ directory */
+            char *last_slash = strrchr(exe_path, '/');
+            if (last_slash) *last_slash = '\0';
+            /* Append /../Resources/site-packages */
+            char rel_path[PATH_MAX];
+            snprintf(rel_path, sizeof(rel_path),
+                     "%s/../Resources/site-packages", exe_path);
+            char resolved[PATH_MAX];
+            if (realpath(rel_path, resolved)) {
+                char insert_cmd[PATH_MAX + 64];
+                snprintf(insert_cmd, sizeof(insert_cmd),
+                         "import sys; sys.path.insert(0, '%s')", resolved);
+                PyRun_SimpleString(insert_cmd);
+            }
+        }
+    }
 
     PyRun_SimpleString(
         "import sys; sys.argv = ['tinywhisper']\n"

@@ -19,6 +19,7 @@ VENV = ROOT / ".venv"
 APP = ROOT / "TinyWhisper.app"
 BINARY = APP / "Contents" / "MacOS" / "TinyWhisper"
 INFO_PLIST = APP / "Contents" / "Info.plist"
+SITE_PACKAGES = APP / "Contents" / "Resources" / "site-packages"
 
 build = pytest.mark.build
 
@@ -77,18 +78,15 @@ def test_launcher_has_python_prefix() -> None:
 
 
 @build
-def test_launcher_has_venv_site_packages() -> None:
-    """The compiled binary contains 'site-packages' (VENV_SITE_PACKAGES baked in)."""
-    assert BINARY.is_file(), "Binary not found — run build tests in order"
-    result = subprocess.run(
-        ["strings", str(BINARY)],
-        capture_output=True,
-        text=True,
+def test_bundle_has_site_packages() -> None:
+    """The bundle contains a site-packages directory with key packages."""
+    assert SITE_PACKAGES.is_dir(), (
+        f"Expected site-packages at {SITE_PACKAGES} — "
+        "build_app.py should copy venv site-packages into the bundle"
     )
-    assert "site-packages" in result.stdout, (
-        "Binary does not contain site-packages path — "
-        "VENV_SITE_PACKAGES may not have been baked in"
-    )
+    for pkg in ("tinywhisper", "PyQt6", "mlx", "sounddevice"):
+        matches = list(SITE_PACKAGES.glob(f"{pkg}*"))
+        assert matches, f"Expected {pkg} in bundled site-packages"
 
 
 @build

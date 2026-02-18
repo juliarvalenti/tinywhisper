@@ -17,6 +17,7 @@ import site
 import subprocess
 import sys
 import sysconfig
+import time
 from pathlib import Path
 
 APP_NAME = "TinyWhisper"
@@ -104,20 +105,32 @@ def build():
         f'-DPYTHON_PREFIX="{prefix}"',
         "-framework", "CoreFoundation",
         "-Wno-deprecated-declarations",
+        str(launcher_c),
     ]
 
-    # When running inside a venv (e.g. uv), bake in the venv's site-packages
-    # so the launcher can find tinywhisper and its dependencies
+    # Detect venv site-packages for bundling
     in_venv = sys.prefix != sys.base_prefix
     if in_venv:
-        sp = site.getsitepackages()[0]
-        clang_args.append(f'-DVENV_SITE_PACKAGES="{sp}"')
+        venv_site_packages = site.getsitepackages()[0]
         print(f"  Venv detected: {sys.prefix}")
-        print(f"  Site-packages: {sp}")
-
-    clang_args.append(str(launcher_c))
+        print(f"  Site-packages: {venv_site_packages}")
 
     subprocess.run(clang_args, check=True)
+
+    # Copy site-packages into bundle so the .app is self-contained
+    # (avoids TCC Documents prompt when repo lives under ~/Documents/)
+    if in_venv:
+        dest = RESOURCES / "site-packages"
+        print(f"  Copying site-packages into bundle...")
+        t0 = time.monotonic()
+        shutil.copytree(
+            venv_site_packages,
+            dest,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        elapsed = time.monotonic() - t0
+        size_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / 1e6
+        print(f"  Copied site-packages ({size_mb:.0f} MB) in {elapsed:.1f}s")
 
     # Ad-hoc codesign
     subprocess.run(
@@ -128,7 +141,7 @@ def build():
     print(f"Built {APP}")
     print(f"  Python: {framework}")
     if in_venv:
-        print("  Venv site-packages baked in")
+        print("  Site-packages bundled into Resources/")
     print()
     print("To launch:")
     print(f"  open {APP}")
