@@ -80,8 +80,10 @@ class TinyWhisperApp:
         self._setup_tray_menu()
 
         # Welcome screen
+        tidier_label = config.tidier.model.split("/")[-1] if config.tidier.enabled else ""
         self._welcome = WelcomeWindow(
             self._hotkey_label(), self._model_label(),
+            tidier_label=tidier_label,
             current_device=config.recording.device,
             current_modifier=config.hotkey.modifier,
             current_key=config.hotkey.key,
@@ -239,6 +241,7 @@ class TinyWhisperApp:
                     3000,
                 )
                 self._tidier = None
+                self._welcome.set_tidier_error("failed to load")
 
         log.info("Model loaded.")
         self._ready = True

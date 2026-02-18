@@ -3,6 +3,7 @@
 import logging
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 
 import Quartz  # pyright: ignore[reportMissingImports]
 from PyQt6.QtCore import QTimer
@@ -118,6 +119,29 @@ def _list_input_devices() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Git / version info
+# ---------------------------------------------------------------------------
+
+def _get_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("tinywhisper")
+    except Exception:
+        return "0.1.0"
+
+
+def _get_git_commit() -> str:
+    try:
+        repo = Path(__file__).parent.parent
+        return subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # UI constants
 # ---------------------------------------------------------------------------
 
@@ -128,7 +152,8 @@ KEYS = ["Space", "Tab", "Enter", "F1", "F2", "F3", "F4", "F5",
 _FONT = QFont(".AppleSystemUIFont", 12)
 _BOLD = QFont(".AppleSystemUIFont", 12, QFont.Weight.Bold)
 _SMALL = QFont(".AppleSystemUIFont", 11)
-_LABEL_W = 140  # fixed width for left-column labels
+_TINY = QFont(".AppleSystemUIFont", 10)
+_LABEL_W = 130  # fixed width for left-column labels
 
 
 def _section_label(text: str) -> QLabel:
@@ -142,6 +167,13 @@ def _divider() -> QFrame:
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
     line.setStyleSheet("color: rgba(128,128,128,0.25);")
+    return line
+
+
+def _vdivider() -> QFrame:
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.VLine)
+    line.setStyleSheet("color: rgba(128,128,128,0.20);")
     return line
 
 
@@ -207,6 +239,52 @@ def _opt_row(label: str, control: QWidget) -> QHBoxLayout:
 
 
 # ---------------------------------------------------------------------------
+# Model status row (right panel)
+# ---------------------------------------------------------------------------
+
+class _ModelRow(QWidget):
+    def __init__(self, label: str, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 3, 0, 3)
+        lay.setSpacing(6)
+
+        self._dot = QLabel("●")
+        self._dot.setFont(_SMALL)
+        self._dot.setStyleSheet("color: #888;")
+        lay.addWidget(self._dot)
+
+        self._label = QLabel(label)
+        self._label.setFont(_SMALL)
+        lay.addWidget(self._label, 1)
+
+        self._status = QLabel("loading…")
+        self._status.setFont(_TINY)
+        self._status.setStyleSheet("color: #888;")
+        lay.addWidget(self._status)
+
+    def set_loading(self, text: str = "loading…"):
+        self._dot.setStyleSheet("color: #FF9800;")
+        self._status.setText(text)
+        self._status.setStyleSheet("color: #888;")
+
+    def set_ready(self):
+        self._dot.setStyleSheet("color: #4CAF50;")
+        self._status.setText("ready")
+        self._status.setStyleSheet("color: #4CAF50;")
+
+    def set_error(self, msg: str = "error"):
+        self._dot.setStyleSheet("color: #F44336;")
+        self._status.setText(msg)
+        self._status.setStyleSheet("color: #F44336;")
+
+    def set_disabled(self):
+        self._dot.setStyleSheet("color: #555;")
+        self._status.setText("disabled")
+        self._status.setStyleSheet("color: #555;")
+
+
+# ---------------------------------------------------------------------------
 # Welcome / options window
 # ---------------------------------------------------------------------------
 
@@ -215,6 +293,7 @@ class WelcomeWindow(QWidget):
         self,
         hotkey_label: str,
         model_label: str,
+        tidier_label: str = "",
         current_device: str | None = None,
         current_modifier: str = "option",
         current_key: str = "space",
@@ -225,46 +304,52 @@ class WelcomeWindow(QWidget):
         self.hotkey_changed: Callable[..., None] | None = None  # set by app.py
         self.open_settings: Callable[[], None] | None = None   # set by app.py
         self.setWindowTitle("TinyWhisper")
-        self.setFixedSize(480, 460)
+        self.setFixedWidth(760)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 16)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         # ── Header ──────────────────────────────────────────────────────────
-        header = QHBoxLayout()
+        header_widget = QWidget()
+        header_widget.setStyleSheet("background: transparent;")
+        header_lay = QHBoxLayout(header_widget)
+        header_lay.setContentsMargins(24, 18, 24, 12)
         title = QLabel("TinyWhisper")
         title.setFont(QFont(".AppleSystemUIFont", 18, QFont.Weight.Bold))
-        header.addWidget(title)
-        header.addStretch()
-        self._model_status = QLabel(f"Loading {model_label}…")
-        self._model_status.setFont(_SMALL)
-        self._model_status.setStyleSheet("color: #888;")
-        header.addWidget(self._model_status)
-        root.addLayout(header)
-
-        root.addSpacing(14)
+        header_lay.addWidget(title)
+        header_lay.addStretch()
+        root.addWidget(header_widget)
         root.addWidget(_divider())
-        root.addSpacing(10)
 
-        # ── Permissions ──────────────────────────────────────────────────────
-        root.addWidget(_section_label("Permissions"))
-        root.addSpacing(6)
+        # ── Body (two columns) ───────────────────────────────────────────────
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
 
+        # ── Left panel ───────────────────────────────────────────────────────
+        left = QWidget()
+        left_lay = QVBoxLayout(left)
+        left_lay.setContentsMargins(24, 20, 20, 20)
+        left_lay.setSpacing(0)
+
+        # Permissions
+        left_lay.addWidget(_section_label("Permissions"))
+        left_lay.addSpacing(10)
         self._input_row = _PermRow("Input Monitoring", self._on_input)
         self._access_row = _PermRow("Accessibility", _open_accessibility_settings)
         self._mic_row = _PermRow("Microphone", self._request_mic, btn_text="Grant Access")
-        root.addWidget(self._input_row)
-        root.addWidget(self._access_row)
-        root.addWidget(self._mic_row)
+        left_lay.addWidget(self._input_row)
+        left_lay.addWidget(self._access_row)
+        left_lay.addWidget(self._mic_row)
 
-        root.addSpacing(10)
-        root.addWidget(_divider())
-        root.addSpacing(10)
+        left_lay.addSpacing(16)
+        left_lay.addWidget(_divider())
+        left_lay.addSpacing(16)
 
-        # ── Options ──────────────────────────────────────────────────────────
-        root.addWidget(_section_label("Options"))
-        root.addSpacing(6)
+        # Options
+        left_lay.addWidget(_section_label("Options"))
+        left_lay.addSpacing(10)
 
         # Hotkey
         hk_widget = QWidget()
@@ -286,42 +371,116 @@ class WelcomeWindow(QWidget):
         self._key_combo.setCurrentText(current_key.capitalize())
         hk_lay.addWidget(self._key_combo)
         hk_lay.addStretch()
-        root.addLayout(_opt_row("Hotkey", hk_widget))
-        root.addSpacing(4)
+        left_lay.addLayout(_opt_row("Hotkey", hk_widget))
+        left_lay.addSpacing(8)
 
         # Audio input
         self._device_combo = QComboBox()
         self._device_combo.setFont(_FONT)
         self._populate_devices(current_device)
-        root.addLayout(_opt_row("Audio Input", self._device_combo))
-        root.addSpacing(4)
+        left_lay.addLayout(_opt_row("Audio Input", self._device_combo))
+        left_lay.addSpacing(8)
 
         # Launch at startup
         self._startup_check = QCheckBox()
         self._startup_check.setChecked(is_launch_at_startup())
-        root.addLayout(_opt_row("Launch at Startup", self._startup_check))
+        left_lay.addLayout(_opt_row("Launch at Startup", self._startup_check))
+        body.addWidget(left, 3)
 
-        root.addSpacing(10)
-        root.addWidget(_divider())
-        root.addSpacing(10)
+        # ── Vertical divider ─────────────────────────────────────────────────
+        body.addWidget(_vdivider())
 
-        # ── Footer ───────────────────────────────────────────────────────────
-        footer = QHBoxLayout()
+        # ── Right panel ──────────────────────────────────────────────────────
+        right = QWidget()
+        right_lay = QVBoxLayout(right)
+        right_lay.setContentsMargins(20, 20, 24, 20)
+        right_lay.setSpacing(0)
+
+        # Model status
+        right_lay.addWidget(_section_label("Model Status"))
+        right_lay.addSpacing(10)
+
+        self._transcription_row = _ModelRow(model_label)
+        self._transcription_row.set_loading()
+        right_lay.addWidget(self._transcription_row)
+
+        if tidier_label:
+            self._tidier_row: _ModelRow | None = _ModelRow(tidier_label)
+            self._tidier_row.set_loading()
+        else:
+            self._tidier_row = _ModelRow("Tidier")
+            self._tidier_row.set_disabled()
+        right_lay.addWidget(self._tidier_row)
+
+        right_lay.addSpacing(16)
+        right_lay.addWidget(_divider())
+        right_lay.addSpacing(16)
+
+        # Git / version
+        right_lay.addWidget(_section_label("Version"))
+        right_lay.addSpacing(10)
+
+        version = _get_version()
+        commit = _get_git_commit()
+        ver_text = f"v{version}"
+        if commit:
+            ver_text += f"  ·  {commit}"
+        ver_lbl = QLabel(ver_text)
+        ver_lbl.setFont(_SMALL)
+        right_lay.addWidget(ver_lbl)
+
         gh = QLabel('<a href="https://github.com/juliarvalenti/tinywhisper">github.com/juliarvalenti/tinywhisper</a>')
         gh.setFont(_SMALL)
         gh.setOpenExternalLinks(True)
         gh.setStyleSheet("color: #888;")
-        footer.addWidget(gh)
-        footer.addStretch()
+        right_lay.addWidget(gh)
+
+        right_lay.addSpacing(16)
+        right_lay.addWidget(_divider())
+        right_lay.addSpacing(16)
+
+        # License
+        right_lay.addWidget(_section_label("License"))
+        right_lay.addSpacing(10)
+
+        mit = QLabel("MIT License")
+        mit.setFont(_SMALL)
+        right_lay.addWidget(mit)
+
+        copy_lbl = QLabel("Copyright © 2025 Julia Valenti")
+        copy_lbl.setFont(_TINY)
+        copy_lbl.setStyleSheet("color: #888;")
+        right_lay.addWidget(copy_lbl)
+
+        perm_lbl = QLabel(
+            "Permission is hereby granted, free of charge, to any person\n"
+            "obtaining a copy of this software to use, copy, modify, merge,\n"
+            "publish, distribute, sublicense, and/or sell copies."
+        )
+        perm_lbl.setFont(_TINY)
+        perm_lbl.setStyleSheet("color: #666;")
+        perm_lbl.setWordWrap(True)
+        right_lay.addSpacing(6)
+        right_lay.addWidget(perm_lbl)
+        body.addWidget(right, 2)
+
+        root.addLayout(body, 1)
+        root.addWidget(_divider())
+
+        # ── Footer ───────────────────────────────────────────────────────────
+        footer_widget = QWidget()
+        footer_lay = QHBoxLayout(footer_widget)
+        footer_lay.setContentsMargins(24, 10, 24, 14)
+        footer_lay.addStretch()
         settings_btn = QPushButton("Advanced Settings…")
         settings_btn.setFont(_SMALL)
         settings_btn.clicked.connect(self._open_settings)
-        footer.addWidget(settings_btn)
+        footer_lay.addWidget(settings_btn)
         close_btn = QPushButton("Close")
         close_btn.setFont(_SMALL)
         close_btn.clicked.connect(self.close)
-        footer.addWidget(close_btn)
-        root.addLayout(footer)
+        footer_lay.addWidget(close_btn)
+        root.addWidget(footer_widget)
 
         # ── Signals ──────────────────────────────────────────────────────────
         self._mod_combo.currentIndexChanged.connect(self._on_hotkey_changed)
@@ -410,15 +569,21 @@ class WelcomeWindow(QWidget):
     # ── Public API ───────────────────────────────────────────────────────────
 
     def set_ready(self, hotkey_label: str, tidier_label: str = ""):
-        text = "● Model ready"
+        self._transcription_row.set_ready()
         if tidier_label:
-            text += f"  +  {tidier_label}"
-        self._model_status.setText(text)
-        self._model_status.setStyleSheet("color: #4CAF50;")
+            self._tidier_row = _ModelRow(tidier_label) if self._tidier_row is None else self._tidier_row
+            self._tidier_row._label.setText(tidier_label)
+            self._tidier_row.set_ready()
+        else:
+            if self._tidier_row:
+                self._tidier_row.set_disabled()
 
     def set_error(self, msg: str):
-        self._model_status.setText(f"Error: {msg}")
-        self._model_status.setStyleSheet("color: #F44336;")
+        self._transcription_row.set_error(msg)
+
+    def set_tidier_error(self, msg: str):
+        if self._tidier_row:
+            self._tidier_row.set_error(msg)
 
     def refresh_startup(self):
         """Sync checkbox with actual system state (e.g. after tray toggle)."""

@@ -134,6 +134,93 @@ def capture_waveform(config: AppConfig) -> Path:
     return path
 
 
+# -- Themes grid ------------------------------------------------------------
+
+
+def capture_themes(config: AppConfig) -> Path:
+    """One waveform screenshot per built-in theme + a composite grid."""
+    import math as _math
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QColor, QPainter, QPixmap
+
+    from tinywhisper.config import OverlayConfig
+    from tinywhisper.overlay import WaveformOverlay
+    from tinywhisper.themes import THEMES
+
+    themes_dir = SCREENSHOTS_DIR / "themes"
+    themes_dir.mkdir(exist_ok=True)
+
+    W, H = 300, 60
+    COLS = 3
+    PAD = 10
+    LABEL_H = 20
+
+    def _make_amps(n: int) -> list[float]:
+        import random
+        rng = random.Random(7)  # deterministic seed for reproducibility
+        # Slow envelope groups bars like spoken words; fast wave adds fine detail
+        return [
+            max(0.04, min(1.0,
+                abs(_math.sin(i * 0.13)) ** 0.7          # slow speech envelope
+                * (abs(_math.sin(i * 0.95 + 0.4)) * 0.7 + 0.3)  # fast detail
+                + rng.uniform(-0.08, 0.08)               # noise
+            ))
+            for i in range(n)
+        ]
+
+    theme_items = list(THEMES.items())
+    ROWS = _math.ceil(len(theme_items) / COLS)
+
+    grid_w = COLS * W + (COLS + 1) * PAD
+    grid_h = ROWS * (H + LABEL_H) + (ROWS + 1) * PAD
+    grid = QPixmap(grid_w, grid_h)
+    grid.fill(QColor("#111111"))
+    grid_painter = QPainter(grid)
+    grid_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    font = grid_painter.font()
+    font.setFamily(".AppleSystemUIFont")
+    font.setPointSize(10)
+    grid_painter.setFont(font)
+
+    for idx, (key, theme) in enumerate(theme_items):
+        ov_cfg = OverlayConfig(
+            enabled=True,
+            width=W,
+            height=H,
+            opacity=theme.opacity,
+            color=theme.color,
+            bg_color=theme.bg_color,
+            gradient=bool(theme.gradient_colors),
+            gradient_colors=theme.gradient_colors,
+        )
+        overlay = WaveformOverlay(ov_cfg)
+        overlay.show()
+        # Write directly to avoid the *8 saturation in push_amplitude
+        overlay._bars.extend(_make_amps(WaveformOverlay.MAX_BARS))
+        overlay.update()
+        px = overlay.grab()
+        overlay.close()
+
+        px.save(str(themes_dir / f"{key}.png"))
+
+        col = idx % COLS
+        row = idx // COLS
+        x = PAD + col * (W + PAD)
+        y = PAD + row * (H + LABEL_H + PAD)
+
+        grid_painter.drawPixmap(x, y, px)
+        grid_painter.setPen(QColor("#AAAAAA"))
+        grid_painter.drawText(x, y + H + 2, W, LABEL_H, Qt.AlignmentFlag.AlignCenter, theme.label)
+
+    grid_painter.end()
+
+    composite = SCREENSHOTS_DIR / "themes.png"
+    grid.save(str(composite))
+    return composite
+
+
 # ---------------------------------------------------------------------------
 # Registry & CLI
 # ---------------------------------------------------------------------------
@@ -143,6 +230,7 @@ TARGETS: dict[str, tuple[str, object]] = {
     "settings": ("Advanced Settings window", capture_settings),
     "overlay": ("Waveform overlay bar", capture_overlay),
     "waveform": ("Waveform preview widget", capture_waveform),
+    "themes": ("All themes grid + per-theme PNGs", capture_themes),
 }
 
 

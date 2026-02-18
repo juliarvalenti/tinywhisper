@@ -8,7 +8,11 @@ Local voice-to-text for macOS Apple Silicon. Press a hotkey, speak, and the tran
 
 Runs entirely on-device using [MLX](https://github.com/ml-explore/mlx) — no cloud APIs, no subscriptions.
 
-![TinyWhisper running on macOS](screenshot.png)
+## Screenshots
+
+| Welcome & Setup | Advanced Settings | Waveform Overlay |
+|:-:|:-:|:-:|
+| ![Welcome screen](screenshots/welcome.png) | ![Settings screen](screenshots/settings.png) | ![Waveform](screenshots/waveform.png) |
 
 ## Features
 
