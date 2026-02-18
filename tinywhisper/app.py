@@ -12,6 +12,8 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
+import pyperclip
+
 from tinywhisper.clipboard import paste_text
 from tinywhisper.config import AppConfig, CONFIG_PATH
 from tinywhisper.hotkey import HotkeyListener, request_access
@@ -46,6 +48,8 @@ class TinyWhisperApp:
         self._recording = False
         self._ready = False
         self._worker: TranscriptionWorker | None = None
+        self._last_raw_text: str = ""
+        self._last_tidied_text: str = ""
 
         # Request Input Monitoring permission (triggers macOS prompt on first run)
         request_access()
@@ -104,6 +108,17 @@ class TinyWhisperApp:
         self._status_action = QAction("Ready", menu)
         self._status_action.setEnabled(False)
         menu.addAction(self._status_action)
+
+        # Copy last transcription buttons
+        self._copy_raw_action = QAction("Copy Last Transcription", menu)
+        self._copy_raw_action.setEnabled(False)
+        self._copy_raw_action.triggered.connect(self._copy_last_raw)
+        menu.addAction(self._copy_raw_action)
+
+        self._copy_tidied_action = QAction("Copy Last Tidied Transcription", menu)
+        self._copy_tidied_action.setEnabled(False)
+        self._copy_tidied_action.triggered.connect(self._copy_last_tidied)
+        menu.addAction(self._copy_tidied_action)
 
         menu.addSeparator()
 
@@ -270,10 +285,20 @@ class TinyWhisperApp:
 
     def _run_transcription(self, wav_path: Path):
         self._worker = TranscriptionWorker(self._engine, wav_path, tidier=self._tidier)
+        self._worker.raw_finished.connect(self._on_raw_transcription)
         self._worker.finished.connect(self._on_transcription_done)
         self._worker.error.connect(self._on_transcription_error)
         self._worker.tidying.connect(lambda: self._set_status("Tidying…"))
         self._worker.start()
+
+    def _on_raw_transcription(self, text: str):
+        """Store raw transcription text for later copying."""
+        if text:
+            self._last_raw_text = text
+            self._copy_raw_action.setEnabled(True)
+            # Reset tidied text until tidying finishes (or doesn't run)
+            self._last_tidied_text = ""
+            self._copy_tidied_action.setEnabled(False)
 
     def _on_transcription_done(self, text: str):
         try:
@@ -284,6 +309,10 @@ class TinyWhisperApp:
                     "TinyWhisper", "No speech detected.", QSystemTrayIcon.MessageIcon.Warning, 2000
                 )
                 return
+            # Track tidied text if it differs from the raw transcription
+            if text != self._last_raw_text:
+                self._last_tidied_text = text
+                self._copy_tidied_action.setEnabled(True)
             paste_text(text)
         except Exception:
             log.exception("Error in transcription done handler")
@@ -300,6 +329,16 @@ class TinyWhisperApp:
             )
         except Exception:
             log.exception("Error in transcription error handler")
+
+    def _copy_last_raw(self):
+        """Copy the last raw transcription to clipboard."""
+        if self._last_raw_text:
+            pyperclip.copy(self._last_raw_text)
+
+    def _copy_last_tidied(self):
+        """Copy the last tidied transcription to clipboard."""
+        if self._last_tidied_text:
+            pyperclip.copy(self._last_tidied_text)
 
     def _on_settings_changed(self):
         """Rebuild overlay and tidier with new settings."""

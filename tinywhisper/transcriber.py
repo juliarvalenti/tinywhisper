@@ -72,7 +72,8 @@ def create_engine(config: TranscriptionConfig) -> TranscriptionEngine:
 class TranscriptionWorker(QThread):
     """Runs transcription (and optional tidying) in a background thread."""
 
-    finished = pyqtSignal(str)  # transcribed text
+    finished = pyqtSignal(str)  # final text (tidied if enabled, otherwise raw)
+    raw_finished = pyqtSignal(str)  # raw transcription before tidying
     error = pyqtSignal(str)  # error message
     tidying = pyqtSignal()  # emitted when tidying step starts
 
@@ -95,6 +96,7 @@ class TranscriptionWorker(QThread):
             text = self._engine.transcribe(self._wav_path)
             elapsed = time.perf_counter() - t0
             log.info("Transcribed in %.2fs: %s", elapsed, text)
+            self.raw_finished.emit(str(text) if text else "")
 
             if text and self._tidier is not None:
                 self.tidying.emit()
