@@ -80,14 +80,10 @@ class Recorder(QObject):
         self._poll_timer.stop()
         if self._stream is not None:
             try:
-                self._stream.stop()
+                self._stream.abort()  # abort() returns immediately; stop() can block
                 self._stream.close()
             except Exception:
-                try:
-                    self._stream.abort()
-                    self._stream.close()
-                except Exception:
-                    pass
+                pass
             self._stream = None
 
         audio = np.concatenate(self._chunks) if self._chunks else np.zeros((0, 1), dtype="float32")

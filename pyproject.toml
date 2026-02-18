@@ -30,6 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 whisper = ["mlx-whisper>=0.4"]
+tidier = ["mlx-lm>=0.14"]
 
 [project.scripts]
 tinywhisper = "tinywhisper.main:main"

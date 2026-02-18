@@ -21,3 +21,12 @@ overlay:
   opacity: 0.85
   color: "#FF6B6B"
   bg_color: "#1E1E1E"
+
+# Optional local LLM to tidy up transcribed text
+# (fix punctuation, capitalization, remove filler words)
+# Requires: pip install "tinywhisper[tidier]"
+tidier:
+  enabled: false
+  model: "mlx-community/Qwen2.5-0.5B-Instruct-4bit"  # ~300 MB, fast on Apple Silicon
+  prompt: ""          # empty = default cleanup prompt
+  max_tokens: 512

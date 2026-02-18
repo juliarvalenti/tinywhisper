@@ -11,6 +11,7 @@ Usage:
     cp -r TinyWhisper.app /Applications/   # optional
 """
 
+import argparse
 import shutil
 import subprocess
 import sysconfig
@@ -122,5 +123,18 @@ def build():
     print(f"  cp -r {APP} /Applications/")
 
 
+def reset_permissions():
+    subprocess.run(["tccutil", "reset", "All", BUNDLE_ID], check=True)
+    print(f"Permissions reset for {BUNDLE_ID}")
+
+
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reset-perms", action="store_true",
+                        help="Reset macOS TCC permissions for the app bundle")
+    args = parser.parse_args()
+
+    if args.reset_perms:
+        reset_permissions()
+    else:
+        build()

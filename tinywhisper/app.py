@@ -53,6 +53,12 @@ class TinyWhisperApp:
         # Transcription engine — created but not loaded yet
         self._engine = create_engine(config.transcription)
 
+        # Optional text tidier (local LLM) — created but not loaded yet
+        self._tidier = None
+        if config.tidier.enabled:
+            from tinywhisper.tidier import Tidier
+            self._tidier = Tidier(config.tidier)
+
         # Components
         self._recorder = Recorder(config.recording)
         self._hotkey = HotkeyListener(config.hotkey.modifier, config.hotkey.key)
@@ -106,6 +112,13 @@ class TinyWhisperApp:
         self._model_action.setEnabled(False)
         menu.addAction(self._model_action)
 
+        # Tidier toggle
+        self._tidier_action = QAction("Tidier", menu)
+        self._tidier_action.setCheckable(True)
+        self._tidier_action.setChecked(self._config.tidier.enabled)
+        self._tidier_action.triggered.connect(self._on_tray_tidier_toggled)
+        menu.addAction(self._tidier_action)
+
         # Memory
         self._memory_action = QAction(f"Memory: {_get_memory_mb()} MB", menu)
         self._memory_action.setEnabled(False)
@@ -129,7 +142,7 @@ class TinyWhisperApp:
         self._startup_action.triggered.connect(self._on_startup_toggled)
         menu.addAction(self._startup_action)
 
-        settings_action = QAction("Settings…", menu)
+        settings_action = QAction("Advanced Settings…", menu)
         settings_action.triggered.connect(self._settings.show)
         menu.addAction(settings_action)
 
@@ -155,6 +168,11 @@ class TinyWhisperApp:
     def _on_startup_toggled(self, checked: bool):
         set_launch_at_startup(checked)
         self._welcome.refresh_startup()
+
+    def _on_tray_tidier_toggled(self, checked: bool):
+        self._config.tidier.enabled = checked
+        self._tidier_action.setChecked(checked)
+        log.info("Tidier %s via tray", "enabled" if checked else "disabled")
 
     def _set_status(self, text: str):
         self._status_action.setText(text)
@@ -185,12 +203,27 @@ class TinyWhisperApp:
             )
             return
 
+        if self._tidier is not None:
+            self._set_status("Loading tidier model…")
+            try:
+                self._tidier.load()
+            except Exception as e:
+                log.error("Tidier model load error: %s", e)
+                self._tray.showMessage(
+                    "TinyWhisper",
+                    f"Tidier model failed to load (disabled): {e}",
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    3000,
+                )
+                self._tidier = None
+
         log.info("Model loaded.")
         self._ready = True
         self._set_status("Ready")
         self._tray.setToolTip("TinyWhisper")
         self._hotkey.start()
-        self._welcome.set_ready(self._hotkey_label())
+        tidier_label = self._config.tidier.model.split("/")[-1] if self._tidier else ""
+        self._welcome.set_ready(self._hotkey_label(), tidier_label)
         self._tray.showMessage(
             "TinyWhisper",
             f"Ready — press {self._hotkey_label()} to record",
@@ -236,9 +269,10 @@ class TinyWhisperApp:
         self._run_transcription(wav_path)
 
     def _run_transcription(self, wav_path: Path):
-        self._worker = TranscriptionWorker(self._engine, wav_path)
+        self._worker = TranscriptionWorker(self._engine, wav_path, tidier=self._tidier)
         self._worker.finished.connect(self._on_transcription_done)
         self._worker.error.connect(self._on_transcription_error)
+        self._worker.tidying.connect(lambda: self._set_status("Tidying…"))
         self._worker.start()
 
     def _on_transcription_done(self, text: str):
@@ -268,7 +302,7 @@ class TinyWhisperApp:
             log.exception("Error in transcription error handler")
 
     def _on_settings_changed(self):
-        """Rebuild overlay with new settings."""
+        """Rebuild overlay and tidier with new settings."""
         if self._overlay:
             self._recorder.amplitude.disconnect(self._overlay.push_amplitude)
             self._overlay.close()
@@ -276,6 +310,26 @@ class TinyWhisperApp:
         self._recorder.amplitude.connect(self._overlay.push_amplitude)
         log.info("Settings applied: opacity=%.2f, color=%s, bg=%s",
                  self._config.overlay.opacity, self._config.overlay.color, self._config.overlay.bg_color)
+
+        # Reinitialize tidier with updated settings
+        if self._config.tidier.enabled:
+            from tinywhisper.tidier import Tidier
+            self._tidier = Tidier(self._config.tidier)
+            try:
+                self._set_status("Loading tidier…")
+                self._tidier.load()
+                self._set_status("Ready")
+                tidier_label = self._config.tidier.model.split("/")[-1]
+                self._welcome.set_ready(self._hotkey_label(), tidier_label)
+                log.info("Tidier reloaded: %s", self._config.tidier.model)
+            except Exception as e:
+                log.error("Tidier load error: %s", e)
+                self._tidier = None
+                self._welcome.set_ready(self._hotkey_label())
+        else:
+            self._tidier = None
+            self._welcome.set_ready(self._hotkey_label())
+        self._tidier_action.setChecked(self._config.tidier.enabled)
 
     def _open_config_file(self):
         """Create config if missing, then open in default editor."""

@@ -6,10 +6,14 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from tinywhisper.config import TranscriptionConfig
+
+if TYPE_CHECKING:
+    from tinywhisper.tidier import Tidier
 
 log = logging.getLogger(__name__)
 
@@ -66,15 +70,23 @@ def create_engine(config: TranscriptionConfig) -> TranscriptionEngine:
 
 
 class TranscriptionWorker(QThread):
-    """Runs transcription in a background thread."""
+    """Runs transcription (and optional tidying) in a background thread."""
 
     finished = pyqtSignal(str)  # transcribed text
     error = pyqtSignal(str)  # error message
+    tidying = pyqtSignal()  # emitted when tidying step starts
 
-    def __init__(self, engine: TranscriptionEngine, wav_path: Path, parent=None):
+    def __init__(
+        self,
+        engine: TranscriptionEngine,
+        wav_path: Path,
+        tidier: Tidier | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._engine = engine
         self._wav_path = wav_path
+        self._tidier = tidier
 
     def run(self):
         try:
@@ -83,6 +95,13 @@ class TranscriptionWorker(QThread):
             text = self._engine.transcribe(self._wav_path)
             elapsed = time.perf_counter() - t0
             log.info("Transcribed in %.2fs: %s", elapsed, text)
+
+            if text and self._tidier is not None:
+                self.tidying.emit()
+                t1 = time.perf_counter()
+                text = self._tidier.tidy(text)
+                log.info("Tidied in %.2fs: %s", time.perf_counter() - t1, text)
+
             self.finished.emit(str(text) if text else "")
         except Exception as e:
             log.error("Transcription failed: %s", e)
