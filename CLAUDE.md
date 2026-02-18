@@ -30,7 +30,8 @@ uv run pytest tests/ -v -m build
 # Run
 uv run tinywhisper
 
-# Build native macOS .app
+# Build native macOS .app (--no-editable avoids Documents TCC prompt)
+uv sync --no-editable
 uv run build_app.py
 
 # Full setup: install, build .app, launch with animated progress
@@ -88,7 +89,7 @@ See `config.example.yaml` for all available options with documentation.
 - **Permissions required**: Input Monitoring (hotkey), Accessibility (Cmd+V paste), Microphone (recording)
 - **macOS-only imports** (Quartz, ApplicationServices, AVFoundation, ServiceManagement) — these won't import on Linux. Guard or mock when writing cross-platform utilities (see `scripts/screenshots.py` for the mocking pattern)
 - **App bundle rebuilds reset macOS permissions** — only rebuild when `launcher.c`, `build_app.py`, or `Info.plist` changes
-- **Always `uv sync` before `uv run build_app.py`** — the build script detects the venv and bakes site-packages into the launcher
+- **Always `uv sync --no-editable` before `uv run build_app.py`** — the build script detects the venv and bakes site-packages into the launcher. The `--no-editable` flag is required to avoid a Documents TCC prompt when the .app launches
 
 ## Common patterns
 

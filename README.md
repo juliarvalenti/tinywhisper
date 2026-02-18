@@ -46,6 +46,7 @@ uv sync --extra whisper
 Build a native menu-bar app (recommended — gives TinyWhisper its own identity for macOS permissions):
 
 ```bash
+uv sync --no-editable   # required — editable installs trigger a Documents TCC prompt
 uv run build_app.py
 cp -r TinyWhisper.app /Applications/   # optional
 open TinyWhisper.app

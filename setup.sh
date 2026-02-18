@@ -49,7 +49,7 @@ if ! command -v uv &>/dev/null; then
     exit 1
 fi
 
-uv sync &>/dev/null &
+uv sync --no-editable &>/dev/null &
 spin $! "Installing dependencies..."
 pass "Dependencies installed"
 

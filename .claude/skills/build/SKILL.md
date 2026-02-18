@@ -6,8 +6,8 @@ Build the native macOS .app bundle for TinyWhisper.
 
 ```bash
 pkill -f TinyWhisper 2>/dev/null   # kill running instance first
-pip install .                       # non-editable install (required — editable installs trigger Documents TCC prompt)
-python3 build_app.py
+uv sync --no-editable              # non-editable install (required — editable installs trigger Documents TCC prompt)
+uv run build_app.py
 cp -r TinyWhisper.app /Applications/
 ```
 
@@ -16,7 +16,7 @@ cp -r TinyWhisper.app /Applications/
 If the user asks to reset permissions (or uses `--reset-perms`):
 
 ```bash
-python3 build_app.py --reset-perms
+uv run build_app.py --reset-perms
 ```
 
 This runs `tccutil reset All com.juliarvalenti.tinywhisper` to clear all TCC permissions, forcing macOS to re-prompt on next launch.
@@ -31,13 +31,13 @@ open /Applications/TinyWhisper.app
 ## Notes
 
 - Requires macOS 13+ on Apple Silicon and Python 3.10+
-- **Always use `pip install .` (not `-e`)** — editable installs symlink into `~/Documents/` and trigger a macOS TCC permission prompt when the .app imports code
-- The build compiles `launcher.c` against the local Python framework — no rebuild needed for Python-only changes, but you must re-run `pip install .` so site-packages is updated
+- **Always use `uv sync --no-editable` (not `uv sync`)** — editable installs symlink into `~/Documents/` and trigger a macOS TCC permission prompt when the .app imports code
+- The build compiles `launcher.c` against the local Python framework — no rebuild needed for Python-only changes, but you must re-run `uv sync --no-editable` so site-packages is updated
 - `launcher.c` sets `PYTHONHOME`, `PYTHONIOENCODING=utf-8`, and `LC_ALL=en_US.UTF-8` at startup — required for Finder launches which have no locale set
 - Each rebuild changes the code signature, which **resets macOS permissions** (Input Monitoring, Accessibility, Microphone). Only rebuild when `launcher.c`, `build_app.py`, or `Info.plist` changes.
 - Ad-hoc codesigning is used (`codesign --force --deep --sign -`)
 - The app is an LSUIElement (menu bar only, no dock icon)
-- App icon: `TinyWhisper.icns` is copied into `Contents/Resources/` during build. Regenerate with `python3 scripts/create_icon.py && iconutil -c icns TinyWhisper.iconset -o TinyWhisper.icns`
+- App icon: `TinyWhisper.icns` is copied into `Contents/Resources/` during build. Regenerate with `uv run scripts/create_icon.py && iconutil -c icns TinyWhisper.iconset -o TinyWhisper.icns`
 
 ## Troubleshooting
 
