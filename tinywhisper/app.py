@@ -308,8 +308,10 @@ class TinyWhisperApp:
             self._overlay.close()
         self._overlay = WaveformOverlay(self._config.overlay)
         self._recorder.amplitude.connect(self._overlay.push_amplitude)
-        log.info("Settings applied: opacity=%.2f, color=%s, bg=%s",
-                 self._config.overlay.opacity, self._config.overlay.color, self._config.overlay.bg_color)
+        log.info("Settings applied: opacity=%.2f, color=%s, bg=%s, theme=%s, gradient=%s",
+                 self._config.overlay.opacity, self._config.overlay.color,
+                 self._config.overlay.bg_color, self._config.overlay.theme or "custom",
+                 self._config.overlay.gradient)
 
         # Reinitialize tidier with updated settings
         if self._config.tidier.enabled:
