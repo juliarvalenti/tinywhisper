@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtGui import QAction, QActionGroup, QFont
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from tinywhisper.clipboard import paste_text
@@ -99,10 +99,20 @@ class TinyWhisperApp:
 
     def _setup_tray_menu(self):
         menu = QMenu()
+        menu.setStyleSheet("""
+            QMenu::item:disabled {
+                color: #888888;
+            }
+        """)
+
+        # Font for read-only informational items — italic signals "not an action"
+        info_font = QFont()
+        info_font.setItalic(True)
 
         # Status line
         self._status_action = QAction("Ready", menu)
         self._status_action.setEnabled(False)
+        self._status_action.setFont(info_font)
         menu.addAction(self._status_action)
 
         menu.addSeparator()
@@ -110,6 +120,7 @@ class TinyWhisperApp:
         # Model info
         self._model_action = QAction(f"Model: {self._model_label()}", menu)
         self._model_action.setEnabled(False)
+        self._model_action.setFont(info_font)
         menu.addAction(self._model_action)
 
         # Tidier toggle
@@ -122,11 +133,13 @@ class TinyWhisperApp:
         # Memory
         self._memory_action = QAction(f"Memory: {_get_memory_mb()} MB", menu)
         self._memory_action.setEnabled(False)
+        self._memory_action.setFont(info_font)
         menu.addAction(self._memory_action)
 
         # Hotkey
         self._hotkey_action = QAction(f"Hotkey: {self._hotkey_label()}", menu)
         self._hotkey_action.setEnabled(False)
+        self._hotkey_action.setFont(info_font)
         menu.addAction(self._hotkey_action)
 
         # Audio device submenu
