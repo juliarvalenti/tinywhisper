@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - "screenshots/**"  # don't re-trigger on our own screenshot commits
+  workflow_dispatch:
 
 permissions:
   contents: write
