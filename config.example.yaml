@@ -1,0 +1,23 @@
+hotkey:
+  modifier: "option"       # option, ctrl, cmd, shift
+  key: "space"             # space, tab, f1-f12, etc.
+
+transcription:
+  engine: "parakeet"       # or "whisper"
+  parakeet:
+    model: "mlx-community/parakeet-tdt-0.6b-v3"
+  whisper:
+    model: "mlx-community/whisper-large-v3-turbo"
+
+recording:
+  sample_rate: 16000
+  channels: 1
+
+overlay:
+  enabled: true
+  width: 300
+  height: 60
+  position: "top-center"
+  opacity: 0.85
+  color: "#FF6B6B"
+  bg_color: "#1E1E1E"
