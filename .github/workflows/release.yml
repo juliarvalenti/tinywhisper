@@ -14,15 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install build tools
-        run: pip install build
+      - uses: astral-sh/setup-uv@v5
 
       - name: Build sdist and wheel
-        run: python -m build
+        run: uv run python -m build
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

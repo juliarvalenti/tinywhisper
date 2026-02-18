@@ -25,10 +25,21 @@ int main(int argc, char *argv[]) {
     setenv("PYTHONIOENCODING", "utf-8", 0);
     setenv("LC_ALL", "en_US.UTF-8", 0);
 
-    /* Set PYTHONHOME so embedded Python finds stdlib + site-packages */
+    /* Set PYTHONHOME so embedded Python finds stdlib */
     setenv("PYTHONHOME", PYTHON_PREFIX, 1);
 
     Py_Initialize();
+
+    /*
+     * When built from a venv (e.g. uv), PYTHONHOME points at the base
+     * Python (for stdlib) but packages live in the venv's site-packages.
+     * Use site.addsitedir() so .pth files are processed (editable installs).
+     * VENV_SITE_PACKAGES is passed via -D at compile time when applicable.
+     */
+#ifdef VENV_SITE_PACKAGES
+    PyRun_SimpleString("import site; site.addsitedir('" VENV_SITE_PACKAGES "')");
+#endif
+
     PyRun_SimpleString(
         "import sys; sys.argv = ['tinywhisper']\n"
         "from tinywhisper.main import main; main()\n"

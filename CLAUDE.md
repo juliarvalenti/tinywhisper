@@ -10,19 +10,28 @@ Local, on-device voice-to-text for macOS Apple Silicon. Records audio via global
 
 ```bash
 # Install
-pip install .
+uv sync
 
 # Lint (must pass with 0 errors — this is what CI runs)
-ruff check tinywhisper/
+uv run ruff check tinywhisper/
 
 # Type check (must pass with 0 errors — this is what CI runs)
-pyright tinywhisper/
+uv run pyright tinywhisper/
+
+# Test (all tests)
+uv run pytest tests/ -v
+
+# Test (quick — skip build/compile tests)
+uv run pytest tests/ -v -m "not build"
+
+# Test (build only — compiles .app and validates bundle)
+uv run pytest tests/ -v -m build
 
 # Run
-tinywhisper
+uv run tinywhisper
 
 # Build native macOS .app
-python3 build_app.py
+uv run build_app.py
 ```
 
 ## Architecture
@@ -63,8 +72,7 @@ Signal flow: Hotkey toggles recording → Recorder streams amplitude to Overlay 
 Every PR must pass:
 1. `ruff check tinywhisper/` — 0 errors
 2. `pyright tinywhisper/` — 0 errors (warnings OK for macOS-only imports like Quartz)
-
-There is no test suite. Static analysis is the quality gate.
+3. `pytest tests/` — build pipeline tests pass
 
 ## Config system
 
@@ -77,7 +85,7 @@ See `config.example.yaml` for all available options with documentation.
 - **Permissions required**: Input Monitoring (hotkey), Accessibility (Cmd+V paste), Microphone (recording)
 - **macOS-only imports** (Quartz, ApplicationServices, AVFoundation, ServiceManagement) — these won't import on Linux. Guard or mock when writing cross-platform utilities (see `scripts/screenshots.py` for the mocking pattern)
 - **App bundle rebuilds reset macOS permissions** — only rebuild when `launcher.c`, `build_app.py`, or `Info.plist` changes
-- **Always `pip install .` (not `-e`)** before building .app — editable installs symlink into `~/Documents/` and trigger a TCC prompt
+- **Always `uv sync` before `uv run build_app.py`** — the build script detects the venv and bakes site-packages into the launcher
 
 ## Common patterns
 

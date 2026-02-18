@@ -34,8 +34,14 @@ dependencies = [
 whisper = ["mlx-whisper>=0.4"]
 tidier = ["mlx-lm>=0.14"]
 
+[dependency-groups]
+dev = ["ruff>=0.8", "pyright>=1.1", "build>=1.0", "pytest>=8.0"]
+
 [project.scripts]
 tinywhisper = "tinywhisper.main:main"
+
+[tool.pytest.ini_options]
+markers = ["build: tests that compile the .app bundle (slow)"]
 
 [tool.setuptools.packages.find]
 include = ["tinywhisper*"]
