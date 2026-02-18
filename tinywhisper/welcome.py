@@ -124,12 +124,11 @@ KEYS = ["Space", "Tab", "Enter", "F1", "F2", "F3", "F4", "F5",
 
 
 class WelcomeWindow(QWidget):
-    device_changed: Callable[..., None] | None = None  # set by app.py
-    hotkey_changed: Callable[..., None] | None = None  # set by app.py
-
     def __init__(self, hotkey_label: str, model_label: str, current_device: str | None = None,
                  current_modifier: str = "option", current_key: str = "space", parent=None):
         super().__init__(parent)
+        self.device_changed: Callable[..., None] | None = None  # set by app.py
+        self.hotkey_changed: Callable[..., None] | None = None  # set by app.py
         self._hotkey_label = hotkey_label
         self.setWindowTitle("TinyWhisper")
         self.setFixedSize(420, 440)
