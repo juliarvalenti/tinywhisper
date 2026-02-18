@@ -22,6 +22,18 @@ overlay:
   color: "#FF6B6B"
   bg_color: "#1E1E1E"
 
+  # Theme presets (like Ghostty themes). Set a theme name to apply its
+  # colors, gradient, and opacity.  Leave empty for custom colors above.
+  # Available: dracula, monokai, tokyo-night, catppuccin, gruvbox, nord,
+  #            solarized, one-dark, cyberpunk, matrix, synthwave,
+  #            rose-pine, kanagawa, everforest, github-dark
+  theme: ""
+
+  # Horizontal gradient across the waveform bars (left → right).
+  # When enabled, bars are colored by position instead of a single color.
+  gradient: false
+  gradient_colors: []        # e.g. ["#FF79C6", "#BD93F9", "#8BE9FD"]
+
 # Optional local LLM to tidy up transcribed text
 # (fix punctuation, capitalization, remove filler words)
 # Requires: pip install "tinywhisper[tidier]"

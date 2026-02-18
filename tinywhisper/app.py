@@ -9,8 +9,10 @@ import subprocess
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtGui import QAction, QActionGroup, QFont
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+
+import pyperclip
 
 from tinywhisper.clipboard import paste_text
 from tinywhisper.config import AppConfig, CONFIG_PATH
@@ -46,6 +48,8 @@ class TinyWhisperApp:
         self._recording = False
         self._ready = False
         self._worker: TranscriptionWorker | None = None
+        self._last_raw_text: str = ""
+        self._last_tidied_text: str = ""
 
         # Request Input Monitoring permission (triggers macOS prompt on first run)
         request_access()
@@ -76,8 +80,10 @@ class TinyWhisperApp:
         self._setup_tray_menu()
 
         # Welcome screen
+        tidier_label = config.tidier.model.split("/")[-1] if config.tidier.enabled else ""
         self._welcome = WelcomeWindow(
             self._hotkey_label(), self._model_label(),
+            tidier_label=tidier_label,
             current_device=config.recording.device,
             current_modifier=config.hotkey.modifier,
             current_key=config.hotkey.key,
@@ -100,16 +106,33 @@ class TinyWhisperApp:
     def _setup_tray_menu(self):
         menu = QMenu()
 
+        # Font for read-only informational items — italic signals "not an action"
+        info_font = QFont()
+        info_font.setItalic(True)
+
         # Status line
         self._status_action = QAction("Ready", menu)
         self._status_action.setEnabled(False)
+        self._status_action.setFont(info_font)
         menu.addAction(self._status_action)
+
+        # Copy last transcription buttons
+        self._copy_raw_action = QAction("Copy Last Transcription", menu)
+        self._copy_raw_action.setEnabled(False)
+        self._copy_raw_action.triggered.connect(self._copy_last_raw)
+        menu.addAction(self._copy_raw_action)
+
+        self._copy_tidied_action = QAction("Copy Last Tidied Transcription", menu)
+        self._copy_tidied_action.setEnabled(False)
+        self._copy_tidied_action.triggered.connect(self._copy_last_tidied)
+        menu.addAction(self._copy_tidied_action)
 
         menu.addSeparator()
 
         # Model info
         self._model_action = QAction(f"Model: {self._model_label()}", menu)
         self._model_action.setEnabled(False)
+        self._model_action.setFont(info_font)
         menu.addAction(self._model_action)
 
         # Tidier toggle
@@ -122,11 +145,13 @@ class TinyWhisperApp:
         # Memory
         self._memory_action = QAction(f"Memory: {_get_memory_mb()} MB", menu)
         self._memory_action.setEnabled(False)
+        self._memory_action.setFont(info_font)
         menu.addAction(self._memory_action)
 
         # Hotkey
         self._hotkey_action = QAction(f"Hotkey: {self._hotkey_label()}", menu)
         self._hotkey_action.setEnabled(False)
+        self._hotkey_action.setFont(info_font)
         menu.addAction(self._hotkey_action)
 
         # Audio device submenu
@@ -216,6 +241,7 @@ class TinyWhisperApp:
                     3000,
                 )
                 self._tidier = None
+                self._welcome.set_tidier_error("failed to load")
 
         log.info("Model loaded.")
         self._ready = True
@@ -270,10 +296,20 @@ class TinyWhisperApp:
 
     def _run_transcription(self, wav_path: Path):
         self._worker = TranscriptionWorker(self._engine, wav_path, tidier=self._tidier)
+        self._worker.raw_finished.connect(self._on_raw_transcription)
         self._worker.finished.connect(self._on_transcription_done)
         self._worker.error.connect(self._on_transcription_error)
         self._worker.tidying.connect(lambda: self._set_status("Tidying…"))
         self._worker.start()
+
+    def _on_raw_transcription(self, text: str):
+        """Store raw transcription text for later copying."""
+        if text:
+            self._last_raw_text = text
+            self._copy_raw_action.setEnabled(True)
+            # Reset tidied text until tidying finishes (or doesn't run)
+            self._last_tidied_text = ""
+            self._copy_tidied_action.setEnabled(False)
 
     def _on_transcription_done(self, text: str):
         try:
@@ -284,6 +320,10 @@ class TinyWhisperApp:
                     "TinyWhisper", "No speech detected.", QSystemTrayIcon.MessageIcon.Warning, 2000
                 )
                 return
+            # Track tidied text if it differs from the raw transcription
+            if text != self._last_raw_text:
+                self._last_tidied_text = text
+                self._copy_tidied_action.setEnabled(True)
             paste_text(text)
         except Exception:
             log.exception("Error in transcription done handler")
@@ -301,6 +341,16 @@ class TinyWhisperApp:
         except Exception:
             log.exception("Error in transcription error handler")
 
+    def _copy_last_raw(self):
+        """Copy the last raw transcription to clipboard."""
+        if self._last_raw_text:
+            pyperclip.copy(self._last_raw_text)
+
+    def _copy_last_tidied(self):
+        """Copy the last tidied transcription to clipboard."""
+        if self._last_tidied_text:
+            pyperclip.copy(self._last_tidied_text)
+
     def _on_settings_changed(self):
         """Rebuild overlay and tidier with new settings."""
         if self._overlay:
@@ -308,8 +358,10 @@ class TinyWhisperApp:
             self._overlay.close()
         self._overlay = WaveformOverlay(self._config.overlay)
         self._recorder.amplitude.connect(self._overlay.push_amplitude)
-        log.info("Settings applied: opacity=%.2f, color=%s, bg=%s",
-                 self._config.overlay.opacity, self._config.overlay.color, self._config.overlay.bg_color)
+        log.info("Settings applied: opacity=%.2f, color=%s, bg=%s, theme=%s, gradient=%s",
+                 self._config.overlay.opacity, self._config.overlay.color,
+                 self._config.overlay.bg_color, self._config.overlay.theme or "custom",
+                 self._config.overlay.gradient)
 
         # Reinitialize tidier with updated settings
         if self._config.tidier.enabled:
