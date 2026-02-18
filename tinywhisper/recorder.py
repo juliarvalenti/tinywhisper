@@ -97,6 +97,8 @@ class Recorder(QObject):
         return Path(tmp.name)
 
     def _audio_callback(self, indata: np.ndarray, frames, time_info, status):
+        if status:
+            log.warning("PortAudio status: %s", status)
         self._chunks.append(indata.copy())
         self._latest_rms = float(np.sqrt(np.mean(indata ** 2)))
 
