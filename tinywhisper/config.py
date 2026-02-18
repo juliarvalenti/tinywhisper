@@ -52,11 +52,20 @@ class OverlayConfig:
 
 
 @dataclass
+class TidierConfig:
+    enabled: bool = False
+    model: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    prompt: str = ""  # empty = use default prompt
+    max_tokens: int = 512
+
+
+@dataclass
 class AppConfig:
     hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
     recording: RecordingConfig = field(default_factory=RecordingConfig)
     overlay: OverlayConfig = field(default_factory=OverlayConfig)
+    tidier: TidierConfig = field(default_factory=TidierConfig)
     extra_path: list[str] = field(default_factory=lambda: ["/opt/homebrew/bin", "/usr/local/bin"])
 
 

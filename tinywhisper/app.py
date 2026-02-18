@@ -53,6 +53,12 @@ class TinyWhisperApp:
         # Transcription engine — created but not loaded yet
         self._engine = create_engine(config.transcription)
 
+        # Optional text tidier (local LLM) — created but not loaded yet
+        self._tidier = None
+        if config.tidier.enabled:
+            from tinywhisper.tidier import Tidier
+            self._tidier = Tidier(config.tidier)
+
         # Components
         self._recorder = Recorder(config.recording)
         self._hotkey = HotkeyListener(config.hotkey.modifier, config.hotkey.key)
@@ -105,6 +111,12 @@ class TinyWhisperApp:
         self._model_action = QAction(f"Model: {self._model_label()}", menu)
         self._model_action.setEnabled(False)
         menu.addAction(self._model_action)
+
+        # Tidier info
+        tidier_label = self._config.tidier.model.split("/")[-1] if self._tidier else "Off"
+        self._tidier_action = QAction(f"Tidier: {tidier_label}", menu)
+        self._tidier_action.setEnabled(False)
+        menu.addAction(self._tidier_action)
 
         # Memory
         self._memory_action = QAction(f"Memory: {_get_memory_mb()} MB", menu)
@@ -185,6 +197,20 @@ class TinyWhisperApp:
             )
             return
 
+        if self._tidier is not None:
+            self._set_status("Loading tidier model…")
+            try:
+                self._tidier.load()
+            except Exception as e:
+                log.error("Tidier model load error: %s", e)
+                self._tray.showMessage(
+                    "TinyWhisper",
+                    f"Tidier model failed to load (disabled): {e}",
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    3000,
+                )
+                self._tidier = None
+
         log.info("Model loaded.")
         self._ready = True
         self._set_status("Ready")
@@ -236,9 +262,10 @@ class TinyWhisperApp:
         self._run_transcription(wav_path)
 
     def _run_transcription(self, wav_path: Path):
-        self._worker = TranscriptionWorker(self._engine, wav_path)
+        self._worker = TranscriptionWorker(self._engine, wav_path, tidier=self._tidier)
         self._worker.finished.connect(self._on_transcription_done)
         self._worker.error.connect(self._on_transcription_error)
+        self._worker.tidying.connect(lambda: self._set_status("Tidying…"))
         self._worker.start()
 
     def _on_transcription_done(self, text: str):
