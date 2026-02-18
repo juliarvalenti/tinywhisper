@@ -249,14 +249,19 @@ class TinyWhisperApp:
                 self._start_recording()
         except Exception:
             log.exception("Error in hotkey toggle")
+            # Reset state so the user can try again
+            self._recording = False
+            if self._overlay:
+                self._overlay.hide()
+            self._set_status("Error — see log")
 
     def _start_recording(self):
-        self._recording = True
         self._set_status("Recording…")
         log.info("Recording started")
         if self._overlay:
             self._overlay.show()
         self._recorder.start()
+        self._recording = True
 
     def _stop_recording(self):
         self._recording = False
