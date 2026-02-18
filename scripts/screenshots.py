@@ -65,6 +65,9 @@ def capture_welcome(config: AppConfig) -> Path:
         {"index": 0, "name": "MacBook Pro Microphone"},
         {"index": 1, "name": "External USB Microphone"},
     ]
+    # Stub version/git so screenshots are stable across commits.
+    _mod._get_version = lambda: "0.1.0"  # type: ignore[assignment]
+    _mod._get_git_commit = lambda: ""  # type: ignore[assignment]
 
     from tinywhisper.welcome import WelcomeWindow
 
