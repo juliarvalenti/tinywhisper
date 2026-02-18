@@ -37,11 +37,13 @@ class WaveformOverlay(QWidget):
     """A frameless, transparent, always-on-top overlay with gradient waveform."""
 
     MAX_BARS = 50
+    _AGC_DECAY = 0.995  # per-frame decay at ~30fps → peak halves in ~4.6s
 
     def __init__(self, config: OverlayConfig, parent=None):
         super().__init__(parent)
         self._config = config
         self._bars: deque[float] = deque(maxlen=self.MAX_BARS)
+        self._agc_peak: float = 0.0
         self._color = QColor(config.color)
         self._bg_color = QColor(config.bg_color)
 
@@ -72,9 +74,14 @@ class WaveformOverlay(QWidget):
     def showEvent(self, a0):  # type: ignore[override]
         super().showEvent(a0)
         self._bars.clear()
+        self._agc_peak = 0.0
 
     def push_amplitude(self, amplitude: float):
-        self._bars.append(min(amplitude * 8, 1.0))
+        # Exponential-decay AGC: instant attack, slow release (~4.6s half-life)
+        self._agc_peak = max(amplitude, self._agc_peak * self._AGC_DECAY)
+        floor = 0.005
+        normalized = amplitude / max(self._agc_peak, floor)
+        self._bars.append(min(normalized, 1.0))
         self.update()
 
     def paintEvent(self, a0):  # type: ignore[override]

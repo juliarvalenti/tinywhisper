@@ -318,7 +318,7 @@ class WelcomeWindow(QWidget):
         header_lay.setSpacing(12)
 
         icon_lbl = QLabel()
-        icon_path = Path(__file__).parent.parent / "icon.png"
+        icon_path = Path(__file__).parent / "icon.png"
         icon_px = QPixmap(str(icon_path))
         if not icon_px.isNull():
             icon_px = icon_px.scaled(
