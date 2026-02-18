@@ -35,6 +35,9 @@ tidier = ["mlx-lm>=0.14"]
 [project.scripts]
 tinywhisper = "tinywhisper.main:main"
 
+[tool.setuptools.packages.find]
+include = ["tinywhisper*"]
+
 [project.urls]
 Homepage = "https://github.com/juliarvalenti/tinywhisper"
 Repository = "https://github.com/juliarvalenti/tinywhisper"
