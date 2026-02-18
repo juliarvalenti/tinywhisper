@@ -1,8 +1,10 @@
-"""Global hotkey using CGEventTap via Quartz.
+"""Global hotkey via HID key-state polling.
 
-Uses CGRequestListenEventAccess() to trigger the macOS permission prompt
-and CGEventTapCreate with kCGEventTapOptionListenOnly for passive monitoring.
-Integrates with Qt's event loop via CFRunLoop.
+Polls CGEventSourceKeyState on a QTimer to detect the configured hotkey.
+Unlike CGEventTap, this reads raw HID hardware state and is not blocked
+when apps enable Secure Event Input (e.g. Webex, Firefox).
+
+Still requires Input Monitoring permission.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import logging
 
 import Quartz  # pyright: ignore[reportMissingImports]
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +51,8 @@ _MOD_MASK = (
     | Quartz.kCGEventFlagMaskShift
 )
 
+_HID_STATE = Quartz.kCGEventSourceStateHIDSystemState
+
 
 def check_access() -> bool:
     """Check if Input Monitoring permission is granted."""
@@ -61,29 +65,35 @@ def request_access() -> bool:
 
 
 class HotkeyListener(QObject):
-    """Global hotkey via CGEventTap — needs Input Monitoring permission."""
+    """Global hotkey via HID key-state polling — immune to Secure Event Input."""
 
     toggled = pyqtSignal()
 
-    def __init__(self, modifier: str = "option", key: str = "space", parent=None):
+    def __init__(self, modifier: str = "option", key: str = "space", parent: QObject | None = None):
         super().__init__(parent)
         self._modifier_flag = _MODIFIER_MAP.get(modifier.lower(), Quartz.kCGEventFlagMaskAlternate)
         self._vkey = _VKEY_MAP.get(key.lower(), 49)
-        self._tap = None
-        self._source = None
+        self._was_pressed = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(50)
+        self._timer.timeout.connect(self._poll)
 
-    def update_binding(self, modifier: str, key: str):
-        """Update the hotkey binding. Restarts the tap if running."""
-        was_running = self._tap is not None
-        if was_running:
-            self.stop()
+    def update_binding(self, modifier: str, key: str) -> None:
+        """Update the hotkey binding."""
         self._modifier_flag = _MODIFIER_MAP.get(modifier.lower(), Quartz.kCGEventFlagMaskAlternate)
         self._vkey = _VKEY_MAP.get(key.lower(), 49)
-        if was_running:
-            self.start()
 
-    def start(self):
-        # Check / request permission
+    def _poll(self) -> None:
+        """Check HID hardware key state for the configured hotkey combo."""
+        flags = Quartz.CGEventSourceFlagsState(_HID_STATE) & _MOD_MASK
+        mod_match = flags == self._modifier_flag
+        key_down = Quartz.CGEventSourceKeyState(_HID_STATE, self._vkey)
+        pressed = mod_match and key_down
+        if pressed and not self._was_pressed:
+            self.toggled.emit()
+        self._was_pressed = pressed
+
+    def start(self) -> None:
         if not check_access():
             log.info("Input Monitoring not granted, requesting…")
             request_access()
@@ -91,44 +101,8 @@ class HotkeyListener(QObject):
                 log.warning("Input Monitoring still not granted. "
                             "Grant permission in System Settings > Privacy & Security > Input Monitoring, "
                             "then restart.")
+        self._timer.start()
+        log.info("Hotkey listener started (vkey=%d, poll=%dms)", self._vkey, self._timer.interval())
 
-        def _callback(proxy, event_type, event, refcon):
-            keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
-            flags = Quartz.CGEventGetFlags(event) & _MOD_MASK
-            if keycode == self._vkey and flags == self._modifier_flag:
-                self.toggled.emit()
-            return event
-
-        self._tap = Quartz.CGEventTapCreate(
-            Quartz.kCGSessionEventTap,
-            Quartz.kCGHeadInsertEventTap,
-            Quartz.kCGEventTapOptionListenOnly,
-            Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown),
-            _callback,
-            None,
-        )
-
-        if self._tap is None:
-            log.error("CGEventTapCreate failed — Input Monitoring not granted.")
-            return
-
-        self._source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
-        Quartz.CFRunLoopAddSource(
-            Quartz.CFRunLoopGetCurrent(),
-            self._source,
-            Quartz.kCFRunLoopCommonModes,
-        )
-        Quartz.CGEventTapEnable(self._tap, True)
-        log.info("Hotkey listener started (vkey=%d)", self._vkey)
-
-    def stop(self):
-        if self._tap is not None:
-            Quartz.CGEventTapEnable(self._tap, False)
-            if self._source is not None:
-                Quartz.CFRunLoopRemoveSource(
-                    Quartz.CFRunLoopGetCurrent(),
-                    self._source,
-                    Quartz.kCFRunLoopCommonModes,
-                )
-                self._source = None
-            self._tap = None
+    def stop(self) -> None:
+        self._timer.stop()
