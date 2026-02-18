@@ -52,6 +52,8 @@ INFO_PLIST = f"""\
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>TinyWhisper</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>TinyWhisper needs microphone access to record and transcribe your voice.</string>
 </dict>
@@ -70,6 +72,11 @@ def build():
 
     # Write Info.plist
     (CONTENTS / "Info.plist").write_text(INFO_PLIST)
+
+    # Copy app icon
+    icns = ROOT / "TinyWhisper.icns"
+    if icns.exists():
+        shutil.copy2(icns, RESOURCES / "TinyWhisper.icns")
 
     # Compile native launcher
     inc = sysconfig.get_path("include")
