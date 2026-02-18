@@ -6,10 +6,12 @@ import random
 from PyQt6.QtCore import Qt, QRectF, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QSlider,
     QSpinBox,
@@ -128,17 +130,26 @@ class SettingsWindow(QWidget):
         self._color = QColor(config.overlay.color)
         self._bg_color = QColor(config.overlay.bg_color)
 
-        self.setWindowTitle("TinyWhisper Settings")
-        self.setFixedSize(380, 480)
+        self.setWindowTitle("TinyWhisper Advanced Settings")
+        self.setFixedSize(420, 720)
         self.setWindowFlags(
             Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint
         )
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        self.setStyleSheet("""
+            QComboBox, QSpinBox { padding: 4px 8px; }
+            QPlainTextEdit { padding: 6px; }
+            QLineEdit { padding: 4px 8px; }
+        """)
 
-        # Hotkey binding
-        layout.addWidget(QLabel("Hotkey"))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(6)
+
+        # ── Hotkey ───────────────────────────────────────────────────────────
+        hk_header = QLabel("Hotkey")
+        hk_header.setStyleSheet("font-weight: bold;")
+        layout.addWidget(hk_header)
         hotkey_row = QHBoxLayout()
         self._mod_combo = QComboBox()
         self._mod_combo.addItems(self.MODIFIERS)
@@ -152,7 +163,12 @@ class SettingsWindow(QWidget):
         hotkey_row.addStretch()
         layout.addLayout(hotkey_row)
 
-        layout.addWidget(QLabel(""))  # spacer
+        layout.addSpacing(12)
+
+        # ── Overlay ──────────────────────────────────────────────────────────
+        ov_header = QLabel("Overlay")
+        ov_header.setStyleSheet("font-weight: bold;")
+        layout.addWidget(ov_header)
 
         # Live preview
         self._preview = WaveformPreview()
@@ -162,8 +178,9 @@ class SettingsWindow(QWidget):
         self._preview.set_bg_color(self._bg_color)
         layout.addWidget(self._preview)
 
+        layout.addSpacing(4)
         # Opacity slider
-        layout.addWidget(QLabel("Overlay Opacity"))
+        layout.addWidget(QLabel("Opacity"))
         opacity_row = QHBoxLayout()
         self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self._opacity_slider.setRange(10, 100)
@@ -175,19 +192,25 @@ class SettingsWindow(QWidget):
         opacity_row.addWidget(self._opacity_label)
         layout.addLayout(opacity_row)
 
-        # Width
-        layout.addWidget(QLabel("Overlay Width"))
+        # Width / Height
+        wh_row = QHBoxLayout()
+        wh_row.setSpacing(12)
+        w_col = QVBoxLayout()
+        w_col.addWidget(QLabel("Width"))
         self._width_spin = QSpinBox()
         self._width_spin.setRange(100, 800)
         self._width_spin.setValue(config.overlay.width)
-        layout.addWidget(self._width_spin)
-
-        # Height
-        layout.addWidget(QLabel("Overlay Height"))
+        w_col.addWidget(self._width_spin)
+        wh_row.addLayout(w_col)
+        h_col = QVBoxLayout()
+        h_col.addWidget(QLabel("Height"))
         self._height_spin = QSpinBox()
         self._height_spin.setRange(30, 200)
         self._height_spin.setValue(config.overlay.height)
-        layout.addWidget(self._height_spin)
+        h_col.addWidget(self._height_spin)
+        wh_row.addLayout(h_col)
+        wh_row.addStretch()
+        layout.addLayout(wh_row)
 
         # Waveform color picker
         wave_color_row = QHBoxLayout()
@@ -211,10 +234,59 @@ class SettingsWindow(QWidget):
         bg_color_row.addStretch()
         layout.addLayout(bg_color_row)
 
+        # ── Tidier ──────────────────────────────────────────────────────────
+        layout.addSpacing(12)
+        tidier_header = QLabel("Tidier")
+        tidier_header.setStyleSheet("font-weight: bold;")
+        layout.addWidget(tidier_header)
+
+        tidier_enable_row = QHBoxLayout()
+        tidier_enable_row.addWidget(QLabel("Enable LLM cleanup"))
+        self._tidier_enabled = QCheckBox()
+        self._tidier_enabled.setChecked(config.tidier.enabled)
+        self._tidier_enabled.toggled.connect(self._on_tidier_toggled)
+        tidier_enable_row.addStretch()
+        tidier_enable_row.addWidget(self._tidier_enabled)
+        layout.addLayout(tidier_enable_row)
+
+        layout.addWidget(QLabel("Model"))
+        self._tidier_model_combo = QComboBox()
+        self._tidier_model_combo.setEditable(True)
+        tidier_models = [
+            "mlx-community/Qwen3-1.7B-4bit",
+            "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+            "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+            "mlx-community/Llama-3.2-1B-Instruct-4bit",
+        ]
+        self._tidier_model_combo.addItems(tidier_models)
+        current_model = config.tidier.model
+        if current_model in tidier_models:
+            self._tidier_model_combo.setCurrentText(current_model)
+        else:
+            self._tidier_model_combo.insertItem(0, current_model)
+            self._tidier_model_combo.setCurrentIndex(0)
+        layout.addWidget(self._tidier_model_combo)
+
+        layout.addWidget(QLabel("Prompt (leave blank for default)"))
+        self._tidier_prompt = QPlainTextEdit()
+        self._tidier_prompt.setFixedHeight(72)
+        self._tidier_prompt.setPlainText(config.tidier.prompt)
+        self._tidier_prompt.setPlaceholderText(
+            "Fix capitalization and punctuation, remove filler words. "
+            "Return only the cleaned text."
+        )
+        layout.addWidget(self._tidier_prompt)
+
+        self._on_tidier_toggled(config.tidier.enabled)
+
         # Save button
         save_btn = QPushButton("Save && Apply")
         save_btn.clicked.connect(self._save)
         layout.addWidget(save_btn)
+
+    def _on_tidier_toggled(self, enabled: bool):
+        self._tidier_model_combo.setEnabled(enabled)
+        self._tidier_prompt.setEnabled(enabled)
 
     def showEvent(self, a0):  # type: ignore[override]
         super().showEvent(a0)
@@ -271,6 +343,11 @@ class SettingsWindow(QWidget):
         self._config.overlay.color = self._color.name()
         self._config.overlay.bg_color = self._bg_color.name()
 
+        # Tidier
+        self._config.tidier.enabled = self._tidier_enabled.isChecked()
+        self._config.tidier.model = self._tidier_model_combo.currentText().strip()
+        self._config.tidier.prompt = self._tidier_prompt.toPlainText().strip()
+
         # Write config to disk
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         data = {
@@ -295,6 +372,12 @@ class SettingsWindow(QWidget):
                 "opacity": self._config.overlay.opacity,
                 "color": self._config.overlay.color,
                 "bg_color": self._config.overlay.bg_color,
+            },
+            "tidier": {
+                "enabled": self._config.tidier.enabled,
+                "model": self._config.tidier.model,
+                "prompt": self._config.tidier.prompt,
+                "max_tokens": self._config.tidier.max_tokens,
             },
         }
         with open(CONFIG_PATH, "w") as f:

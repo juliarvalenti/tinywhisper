@@ -54,7 +54,7 @@ class OverlayConfig:
 @dataclass
 class TidierConfig:
     enabled: bool = False
-    model: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    model: str = "mlx-community/Qwen3-1.7B-4bit"
     prompt: str = ""  # empty = use default prompt
     max_tokens: int = 512
 

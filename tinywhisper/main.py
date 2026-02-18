@@ -1,5 +1,6 @@
 """Entry point for TinyWhisper."""
 
+import fcntl
 import logging
 import sys
 import traceback
@@ -12,12 +13,20 @@ from tinywhisper.app import TinyWhisperApp
 
 
 LOG_PATH = Path.home() / ".config" / "tinywhisper" / "tinywhisper.log"
+LOCK_PATH = Path.home() / ".config" / "tinywhisper" / "tinywhisper.lock"
 
 log = logging.getLogger("tinywhisper")
 
 
 def main():
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    # Single-instance guard — exit silently if already running
+    lock_file = open(LOCK_PATH, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(0)
 
     # Use line-buffered UTF-8 writes so tracebacks are flushed before abort()
     log_file = open(LOG_PATH, "a", buffering=1, encoding="utf-8")

@@ -30,13 +30,16 @@ class Tidier:
         from mlx_lm import load  # pyright: ignore[reportMissingImports]
 
         log.info("Loading tidier model: %s", self._model_name)
-        self._model, self._tokenizer = load(self._model_name)
+        result = load(self._model_name)  # pyright: ignore[reportAssignmentType]
+        self._model, self._tokenizer = result[0], result[1]
         log.info("Tidier model loaded.")
 
     def tidy(self, text: str) -> str:
         """Run the LLM to clean up transcribed text. Returns tidied text."""
         if self._model is None:
             self.load()
+        assert self._model is not None
+        assert self._tokenizer is not None
 
         from mlx_lm import generate  # pyright: ignore[reportMissingImports]
 
@@ -46,20 +49,32 @@ class Tidier:
         ]
 
         if hasattr(self._tokenizer, "apply_chat_template"):
-            prompt = self._tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            try:
+                prompt = self._tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                prompt = self._tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True,
+                )
         else:
-            # Fallback for tokenizers without chat template
             prompt = f"{self._prompt}\n\n{text}"
+
+        from mlx_lm.sample_utils import make_repetition_penalty  # pyright: ignore[reportMissingImports]
+        logits_processors = [make_repetition_penalty(penalty=1.3, context_size=20)]
 
         result = generate(
             self._model,
             self._tokenizer,
             prompt=prompt,
             max_tokens=self._max_tokens,
+            logits_processors=logits_processors,
         )
 
+        # Strip <think>...</think> blocks in case thinking mode leaked through
+        import re
+        result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL)
         tidied = result.strip()
         log.info("Tidied: %r -> %r", text, tidied)
         return tidied if tidied else text

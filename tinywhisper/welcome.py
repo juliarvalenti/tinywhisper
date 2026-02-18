@@ -225,7 +225,7 @@ class WelcomeWindow(QWidget):
         self.hotkey_changed: Callable[..., None] | None = None  # set by app.py
         self.open_settings: Callable[[], None] | None = None   # set by app.py
         self.setWindowTitle("TinyWhisper")
-        self.setFixedSize(430, 460)
+        self.setFixedSize(480, 460)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 16)
@@ -313,7 +313,7 @@ class WelcomeWindow(QWidget):
         gh.setStyleSheet("color: #888;")
         footer.addWidget(gh)
         footer.addStretch()
-        settings_btn = QPushButton("Settings…")
+        settings_btn = QPushButton("Advanced Settings…")
         settings_btn.setFont(_SMALL)
         settings_btn.clicked.connect(self._open_settings)
         footer.addWidget(settings_btn)
@@ -409,8 +409,11 @@ class WelcomeWindow(QWidget):
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def set_ready(self, hotkey_label: str):
-        self._model_status.setText("● Model ready")
+    def set_ready(self, hotkey_label: str, tidier_label: str = ""):
+        text = "● Model ready"
+        if tidier_label:
+            text += f"  +  {tidier_label}"
+        self._model_status.setText(text)
         self._model_status.setStyleSheet("color: #4CAF50;")
 
     def set_error(self, msg: str):
