@@ -6,8 +6,22 @@ set -euo pipefail
 LOG_DIR="$HOME/.config/tinywhisper"
 LOG_FILE="$LOG_DIR/tinywhisper.log"
 READY_TIMEOUT=90          # seconds to wait for model load
-SPINNER_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-FRAME_DELAY=0.1
+FRAME_DELAY=0.08
+
+# Audio-wave frames — vertical bars that ripple like a waveform visualizer.
+# Uses Unicode block elements: ▁▂▃▅▆▇█ (ascending height).
+WAVE_FRAMES=(
+    "▁▂▃▅█▅▃▂▁"
+    "▂▃▅█▇▃▂▁▂"
+    "▃▅█▇▅▂▁▂▃"
+    "▅█▇▅▃▁▂▃▅"
+    "█▇▅▃▂▂▃▅█"
+    "▇▅▃▂▁▃▅█▇"
+    "▅▃▂▁▂▅█▇▅"
+    "▃▂▁▂▃█▇▅▃"
+    "▂▁▂▃▅▇▅▃▂"
+    "▁▂▃▅▇▅▃▂▁"
+)
 
 # ── Colors ────────────────────────────────────────────────────────────
 BOLD="\033[1m"
@@ -23,8 +37,9 @@ RESET="\033[0m"
 spin() {
     # Usage: spin PID "message"
     local pid=$1 msg=$2 i=0
+    local n=${#WAVE_FRAMES[@]}
     while kill -0 "$pid" 2>/dev/null; do
-        printf "\r  ${CYAN}${SPINNER_FRAMES[$((i % ${#SPINNER_FRAMES[@]}))]}${RESET}  %s" "$msg"
+        printf "\r  ${CYAN}${WAVE_FRAMES[$((i % n))]}${RESET}  %s" "$msg"
         sleep "$FRAME_DELAY"
         i=$((i + 1))
     done
@@ -81,7 +96,7 @@ i=0
 ready=false
 
 while (( elapsed < READY_TIMEOUT )); do
-    printf "\r  ${CYAN}${SPINNER_FRAMES[$((i % ${#SPINNER_FRAMES[@]}))]}${RESET}  Launching TinyWhisper..."
+    printf "\r  ${CYAN}${WAVE_FRAMES[$((i % ${#WAVE_FRAMES[@]}))]}${RESET}  Launching TinyWhisper..."
     sleep "$FRAME_DELAY"
     i=$((i + 1))
 
