@@ -51,6 +51,12 @@ cp -r TinyWhisper.app /Applications/   # optional
 open TinyWhisper.app
 ```
 
+Or use the all-in-one setup script to install, build, and launch with animated progress:
+
+```bash
+./setup.sh
+```
+
 ## Usage
 
 ```bash

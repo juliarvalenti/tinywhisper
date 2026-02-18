@@ -32,6 +32,9 @@ uv run tinywhisper
 
 # Build native macOS .app
 uv run build_app.py
+
+# Full setup: install, build .app, launch with animated progress
+./setup.sh
 ```
 
 ## Architecture
