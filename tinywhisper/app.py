@@ -106,17 +106,18 @@ class TinyWhisperApp:
     def _setup_tray_menu(self):
         menu = QMenu()
 
-        # Font for read-only informational items — italic signals "not an action"
-        info_font = QFont()
-        info_font.setItalic(True)
+        # Windows
+        overview_action = QAction("Overview…", menu)
+        overview_action.triggered.connect(lambda: self._welcome.show())
+        menu.addAction(overview_action)
 
-        # Status line
-        self._status_action = QAction("Ready", menu)
-        self._status_action.setEnabled(False)
-        self._status_action.setFont(info_font)
-        menu.addAction(self._status_action)
+        settings_action = QAction("Advanced Settings…", menu)
+        settings_action.triggered.connect(self._settings.show)
+        menu.addAction(settings_action)
 
-        # Copy last transcription buttons
+        menu.addSeparator()
+
+        # Copy last transcription
         self._copy_raw_action = QAction("Copy Last Transcription", menu)
         self._copy_raw_action.setEnabled(False)
         self._copy_raw_action.triggered.connect(self._copy_last_raw)
@@ -129,37 +130,16 @@ class TinyWhisperApp:
 
         menu.addSeparator()
 
-        # Model info
-        self._model_action = QAction(f"Model: {self._model_label()}", menu)
-        self._model_action.setEnabled(False)
-        self._model_action.setFont(info_font)
-        menu.addAction(self._model_action)
-
-        # Tidier toggle
-        self._tidier_action = QAction("Tidier", menu)
+        # Toggles
+        self._tidier_action = QAction("Enable Tidier", menu)
         self._tidier_action.setCheckable(True)
         self._tidier_action.setChecked(self._config.tidier.enabled)
         self._tidier_action.triggered.connect(self._on_tray_tidier_toggled)
         menu.addAction(self._tidier_action)
 
-        # Memory
-        self._memory_action = QAction(f"Memory: {_get_memory_mb()} MB", menu)
-        self._memory_action.setEnabled(False)
-        self._memory_action.setFont(info_font)
-        menu.addAction(self._memory_action)
-
-        # Hotkey
-        self._hotkey_action = QAction(f"Hotkey: {self._hotkey_label()}", menu)
-        self._hotkey_action.setEnabled(False)
-        self._hotkey_action.setFont(info_font)
-        menu.addAction(self._hotkey_action)
-
-        # Audio device submenu
         self._device_menu = QMenu("Audio Input", menu)
         menu.addMenu(self._device_menu)
         self._device_menu.aboutToShow.connect(self._refresh_device_menu)
-
-        menu.addSeparator()
 
         self._startup_action = QAction("Launch at Startup", menu)
         self._startup_action.setCheckable(True)
@@ -167,27 +147,21 @@ class TinyWhisperApp:
         self._startup_action.triggered.connect(self._on_startup_toggled)
         menu.addAction(self._startup_action)
 
-        settings_action = QAction("Advanced Settings…", menu)
-        settings_action.triggered.connect(self._settings.show)
-        menu.addAction(settings_action)
+        menu.addSeparator()
 
         config_action = QAction("Open Config File…", menu)
         config_action.triggered.connect(self._open_config_file)
         menu.addAction(config_action)
 
-        menu.addSeparator()
         quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
 
-        # Refresh memory when menu is about to show
         menu.aboutToShow.connect(self._refresh_tray_info)
 
         self._tray.setContextMenu(menu)
 
     def _refresh_tray_info(self):
-        self._memory_action.setText(f"Memory: {_get_memory_mb()} MB")
-        self._hotkey_action.setText(f"Hotkey: {self._hotkey_label()}")
         self._startup_action.setChecked(is_launch_at_startup())
 
     def _on_startup_toggled(self, checked: bool):
@@ -198,9 +172,12 @@ class TinyWhisperApp:
         self._config.tidier.enabled = checked
         self._tidier_action.setChecked(checked)
         log.info("Tidier %s via tray", "enabled" if checked else "disabled")
+        if not checked:
+            self._tidier = None
+            self._welcome.set_ready(self._hotkey_label())
 
     def _set_status(self, text: str):
-        self._status_action.setText(text)
+        self._tray.setToolTip(f"TinyWhisper — {text}")
 
     def start(self):
         """Show tray + welcome, then load model on main thread via deferred call."""
@@ -393,7 +370,6 @@ class TinyWhisperApp:
     def _on_hotkey_changed(self):
         """Update hotkey binding (from settings window)."""
         self._hotkey.update_binding(self._config.hotkey.modifier, self._config.hotkey.key)
-        self._hotkey_action.setText(f"Hotkey: {self._hotkey_label()}")
         log.info("Hotkey updated to %s", self._hotkey_label())
 
     def _on_welcome_hotkey_changed(self, modifier: str, key: str):
@@ -401,7 +377,6 @@ class TinyWhisperApp:
         self._config.hotkey.modifier = modifier
         self._config.hotkey.key = key
         self._hotkey.update_binding(modifier, key)
-        self._hotkey_action.setText(f"Hotkey: {self._hotkey_label()}")
         log.info("Hotkey updated to %s", self._hotkey_label())
 
         # Save to config

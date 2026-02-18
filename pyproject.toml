@@ -38,6 +38,9 @@ tinywhisper = "tinywhisper.main:main"
 [tool.setuptools.packages.find]
 include = ["tinywhisper*"]
 
+[tool.setuptools.package-data]
+tinywhisper = ["*.jpg", "*.png"]
+
 [project.urls]
 Homepage = "https://github.com/juliarvalenti/tinywhisper"
 Repository = "https://github.com/juliarvalenti/tinywhisper"

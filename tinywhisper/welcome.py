@@ -6,8 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 import Quartz  # pyright: ignore[reportMissingImports]
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
     QPushButton, QVBoxLayout, QWidget,
@@ -315,6 +315,19 @@ class WelcomeWindow(QWidget):
         header_widget.setStyleSheet("background: transparent;")
         header_lay = QHBoxLayout(header_widget)
         header_lay.setContentsMargins(24, 18, 24, 12)
+        header_lay.setSpacing(12)
+
+        icon_lbl = QLabel()
+        icon_path = Path(__file__).parent.parent / "icon.png"
+        icon_px = QPixmap(str(icon_path)).scaled(
+            48, 48,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        icon_lbl.setPixmap(icon_px)
+        icon_lbl.setFixedSize(48, 48)
+        header_lay.addWidget(icon_lbl)
+
         title = QLabel("TinyWhisper")
         title.setFont(QFont(".AppleSystemUIFont", 18, QFont.Weight.Bold))
         header_lay.addWidget(title)
