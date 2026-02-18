@@ -37,6 +37,7 @@ class TranscriptionConfig:
 class RecordingConfig:
     sample_rate: int = 16000
     channels: int = 1
+    device: str | None = None  # audio input device name, None = system default
 
 
 @dataclass
@@ -56,6 +57,7 @@ class AppConfig:
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
     recording: RecordingConfig = field(default_factory=RecordingConfig)
     overlay: OverlayConfig = field(default_factory=OverlayConfig)
+    extra_path: list[str] = field(default_factory=lambda: ["/opt/homebrew/bin", "/usr/local/bin"])
 
 
 def load_config() -> AppConfig:

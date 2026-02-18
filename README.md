@@ -30,19 +30,30 @@ To also install Whisper support:
 pip install -e ".[whisper]"
 ```
 
+### macOS .app bundle
+
+Build a native menu-bar app (recommended — gives TinyWhisper its own identity for macOS permissions):
+
+```bash
+python3 build_app.py
+cp -r TinyWhisper.app /Applications/   # optional
+open TinyWhisper.app
+```
+
 ## Usage
 
 ```bash
-tinywhisper
+tinywhisper            # run from terminal
+# or
+open TinyWhisper.app   # run as native app
 ```
 
-1. Grant **Accessibility** permission (System Settings → Privacy & Security → Accessibility → add your terminal)
-2. Grant **Microphone** permission when prompted
-3. Press **Option+Space** to start recording
-4. Speak, then press **Option+Space** again
-5. Transcription is pasted at your cursor
+1. Grant **Input Monitoring**, **Accessibility**, and **Microphone** permissions when prompted
+2. Press **Option+Space** to start recording
+3. Speak, then press **Option+Space** again
+4. Transcription is pasted at your cursor
 
-Right-click the menu bar icon for settings, config file, and status info.
+Right-click the menu bar icon for settings, audio device selection, config file, and status info.
 
 ## Configuration
 
@@ -63,6 +74,7 @@ transcription:
 recording:
   sample_rate: 16000
   channels: 1
+  device: null             # audio input device name, or null for system default
 
 overlay:
   enabled: true

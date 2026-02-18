@@ -1,5 +1,6 @@
 """Audio recording via sounddevice + WAV export."""
 
+import logging
 import tempfile
 from pathlib import Path
 
@@ -9,6 +10,8 @@ import soundfile as sf
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from tinywhisper.config import RecordingConfig
+
+log = logging.getLogger(__name__)
 
 
 class Recorder(QObject):
@@ -32,10 +35,41 @@ class Recorder(QObject):
         """Start capturing audio."""
         self._chunks.clear()
         self._latest_rms = 0.0
+
+        # Resolve device: config name -> device index, or None for default
+        device = None
+        if self._config.device:
+            try:
+                devices = sd.query_devices()
+                for i, d in enumerate(devices):
+                    if self._config.device.lower() in d['name'].lower() and d['max_input_channels'] > 0:
+                        device = i
+                        break
+                if device is not None:
+                    log.info("Using audio device: %s", devices[device]['name'])
+                else:
+                    log.warning("Configured device '%s' not found, using default", self._config.device)
+            except Exception:
+                pass
+
+        if device is None:
+            default_dev = sd.query_devices(kind='input')
+            log.info("Using default audio device: %s", default_dev['name'])
+
+        # Ensure any previous stream is fully closed
+        if self._stream is not None:
+            try:
+                self._stream.abort()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
         self._stream = sd.InputStream(
             samplerate=self._config.sample_rate,
             channels=self._config.channels,
             dtype="float32",
+            device=device,
             callback=self._audio_callback,
         )
         self._stream.start()
@@ -46,14 +80,21 @@ class Recorder(QObject):
         self._poll_timer.stop()
         if self._stream is not None:
             try:
-                self._stream.abort()  # abort is non-blocking, stop() can deadlock
+                self._stream.stop()
                 self._stream.close()
             except Exception:
-                pass
+                try:
+                    self._stream.abort()
+                    self._stream.close()
+                except Exception:
+                    pass
             self._stream = None
 
         audio = np.concatenate(self._chunks) if self._chunks else np.zeros((0, 1), dtype="float32")
         self._chunks.clear()
+
+        duration = len(audio) / self._config.sample_rate
+        log.info("Recorded %.2fs of audio (%d samples)", duration, len(audio))
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         sf.write(tmp.name, audio, self._config.sample_rate)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -9,6 +10,8 @@ from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from tinywhisper.config import TranscriptionConfig
+
+log = logging.getLogger(__name__)
 
 
 class TranscriptionEngine(ABC):
@@ -78,9 +81,14 @@ class TranscriptionWorker(QThread):
 
     def run(self):
         try:
+            import time
+            t0 = time.perf_counter()
             text = self._engine.transcribe(self._wav_path)
-            self.finished.emit(text)
+            elapsed = time.perf_counter() - t0
+            log.info("Transcribed in %.2fs: %s", elapsed, text)
+            self.finished.emit(str(text) if text else "")
         except Exception as e:
+            log.error("Transcription failed: %s", e)
             self.error.emit(str(e))
         finally:
             try:
