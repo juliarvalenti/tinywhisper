@@ -89,7 +89,7 @@ mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
 log_offset=$(wc -c < "$LOG_FILE" | tr -d ' ')
 
-open TinyWhisper.app
+open "$(dirname "$0")/TinyWhisper.app"
 
 elapsed=0
 i=0
@@ -100,8 +100,8 @@ while (( elapsed < READY_TIMEOUT )); do
     sleep "$FRAME_DELAY"
     i=$((i + 1))
 
-    # Only check the log every ~1 second (every 10 frames at 0.1s each).
-    if (( i % 10 == 0 )); then
+    # Only check the log every ~1 second (every 13 frames at 0.08s each).
+    if (( i % 13 == 0 )); then
         elapsed=$((elapsed + 1))
 
         # Check for the ready signal in new log output.
