@@ -11,6 +11,16 @@ python3 build_app.py
 cp -r TinyWhisper.app /Applications/
 ```
 
+## Reset permissions after build
+
+If the user asks to reset permissions (or uses `--reset-perms`):
+
+```bash
+python3 build_app.py --reset-perms
+```
+
+This runs `tccutil reset All com.juliarvalenti.tinywhisper` to clear all TCC permissions, forcing macOS to re-prompt on next launch.
+
 ## Launch
 
 ```bash

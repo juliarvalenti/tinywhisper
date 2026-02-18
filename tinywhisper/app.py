@@ -153,6 +153,10 @@ class TinyWhisperApp:
         config_action.triggered.connect(self._open_config_file)
         menu.addAction(config_action)
 
+        log_action = QAction("Open Log File…", menu)
+        log_action.triggered.connect(self._open_log_file)
+        menu.addAction(log_action)
+
         quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
@@ -366,6 +370,12 @@ class TinyWhisperApp:
             # Save current config so there's something to open
             self._settings._save()
         subprocess.Popen(["open", str(CONFIG_PATH)])
+
+    def _open_log_file(self) -> None:
+        """Open the log file in the default editor."""
+        log_path = CONFIG_PATH.parent / "tinywhisper.log"
+        if log_path.exists():
+            subprocess.Popen(["open", str(log_path)])
 
     def _on_hotkey_changed(self):
         """Update hotkey binding (from settings window)."""
