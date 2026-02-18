@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QFont
+from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 import pyperclip
