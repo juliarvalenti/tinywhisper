@@ -99,11 +99,6 @@ class TinyWhisperApp:
 
     def _setup_tray_menu(self):
         menu = QMenu()
-        menu.setStyleSheet("""
-            QMenu::item:disabled {
-                color: #888888;
-            }
-        """)
 
         # Font for read-only informational items — italic signals "not an action"
         info_font = QFont()
