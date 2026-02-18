@@ -34,6 +34,8 @@ jobs:
         run: |
           pip install --quiet \
             PyQt6 pyyaml dacite numpy sounddevice soundfile pyperclip
+          # Install tinywhisper without its macOS/MLX-only dependencies
+          pip install --quiet --no-deps -e .
 
       - name: Generate screenshots
         env:
