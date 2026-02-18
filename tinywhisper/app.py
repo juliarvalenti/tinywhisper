@@ -90,7 +90,7 @@ class TinyWhisperApp:
         )
         self._welcome.device_changed = self._on_device_changed
         self._welcome.hotkey_changed = self._on_welcome_hotkey_changed
-        self._welcome.open_settings = self._settings.show
+        self._welcome.open_settings = self._show_settings
 
         # Connections
         self._hotkey.toggled.connect(self._on_toggle)
@@ -108,11 +108,11 @@ class TinyWhisperApp:
 
         # Windows
         overview_action = QAction("Overview…", menu)
-        overview_action.triggered.connect(lambda: self._welcome.show())
+        overview_action.triggered.connect(self._show_welcome)
         menu.addAction(overview_action)
 
         settings_action = QAction("Advanced Settings…", menu)
-        settings_action.triggered.connect(self._settings.show)
+        settings_action.triggered.connect(self._show_settings)
         menu.addAction(settings_action)
 
         menu.addSeparator()
@@ -381,6 +381,24 @@ class TinyWhisperApp:
         """Update hotkey binding (from settings window)."""
         self._hotkey.update_binding(self._config.hotkey.modifier, self._config.hotkey.key)
         log.info("Hotkey updated to %s", self._hotkey_label())
+
+    def _show_welcome(self):
+        """Bring the welcome/overview window to the foreground."""
+        from AppKit import NSApp, NSApplicationActivationPolicyRegular  # pyright: ignore[reportMissingImports]
+        NSApp.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+        self._welcome.show()
+        self._welcome.raise_()
+        self._welcome.activateWindow()
+        NSApp.activateIgnoringOtherApps_(True)
+
+    def _show_settings(self):
+        """Bring the advanced settings window to the foreground."""
+        from AppKit import NSApp, NSApplicationActivationPolicyRegular  # pyright: ignore[reportMissingImports]
+        NSApp.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+        self._settings.show()
+        self._settings.raise_()
+        self._settings.activateWindow()
+        NSApp.activateIgnoringOtherApps_(True)
 
     def _on_welcome_hotkey_changed(self, modifier: str, key: str):
         """Update hotkey binding (from welcome screen)."""
