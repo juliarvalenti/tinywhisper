@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
 )
 
 from tinywhisper.config import AppConfig, CONFIG_DIR, CONFIG_PATH
+from tinywhisper.overlay import gradient_color_at
+from tinywhisper.themes import THEMES, THEME_ORDER
 
 import yaml
 
@@ -34,6 +36,8 @@ class WaveformPreview(QWidget):
         self._opacity = 0.85
         self._color = QColor("#FF6B6B")
         self._bg_color = QColor("#1E1E1E")
+        self._gradient = False
+        self._gradient_colors: list[QColor] = []
         self._phase = 0.0
         self._bars: list[float] = [0.0] * self.MAX_BARS
 
@@ -62,6 +66,12 @@ class WaveformPreview(QWidget):
 
     def set_bg_color(self, color: QColor):
         self._bg_color = color
+        self.update()
+
+    def set_gradient(self, enabled: bool, colors: list[QColor] | None = None):
+        self._gradient = enabled and colors is not None and len(colors) >= 2
+        if colors is not None:
+            self._gradient_colors = list(colors)
         self.update()
 
     def _tick(self):
@@ -96,7 +106,7 @@ class WaveformPreview(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 14, 14)
 
-        # Bars with gradient
+        # Bars
         bar_w = max(3, (w - 24) // self.MAX_BARS - 1)
         gap = 1
         total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
@@ -104,14 +114,38 @@ class WaveformPreview(QWidget):
         mid_y = h / 2
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self._color)
         for i, amp in enumerate(self._bars):
             bh = max(3, int(amp * (h - 18)))
             x = x_start + i * (bar_w + gap)
             y = mid_y - bh / 2
+
+            if self._gradient and self._gradient_colors:
+                t = i / max(1, self.MAX_BARS - 1)
+                color = gradient_color_at(self._gradient_colors, t)
+                painter.setBrush(color)
+            else:
+                painter.setBrush(self._color)
+
             painter.drawRoundedRect(QRectF(x, y, bar_w, bh), 1.5, 1.5)
 
         painter.end()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_COLOR_BTN_STYLE = (
+    "background-color: {hex}; border: 1px solid #888; border-radius: 4px;"
+)
+
+
+def _make_color_btn(color: QColor, callback) -> QPushButton:
+    btn = QPushButton()
+    btn.setFixedSize(60, 28)
+    btn.setStyleSheet(_COLOR_BTN_STYLE.format(hex=color.name()))
+    btn.clicked.connect(callback)
+    return btn
 
 
 class SettingsWindow(QWidget):
@@ -130,8 +164,19 @@ class SettingsWindow(QWidget):
         self._color = QColor(config.overlay.color)
         self._bg_color = QColor(config.overlay.bg_color)
 
+        # Gradient state
+        grad_colors = config.overlay.gradient_colors
+        self._grad_start = QColor(grad_colors[0]) if grad_colors else QColor("#FF6B6B")
+        self._grad_end = QColor(grad_colors[-1]) if grad_colors else QColor("#8BE9FD")
+        self._grad_mid = (
+            QColor(grad_colors[len(grad_colors) // 2])
+            if len(grad_colors) >= 3
+            else None
+        )
+        self._gradient_colors_raw = list(grad_colors)  # keep full list from themes
+
         self.setWindowTitle("TinyWhisper Advanced Settings")
-        self.setFixedSize(420, 720)
+        self.setFixedSize(420, 820)
         self.setWindowFlags(
             Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint
         )
@@ -170,12 +215,37 @@ class SettingsWindow(QWidget):
         ov_header.setStyleSheet("font-weight: bold;")
         layout.addWidget(ov_header)
 
+        # Theme selector
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("Theme"))
+        self._theme_combo = QComboBox()
+        self._theme_combo.addItem("Custom")
+        for key in THEME_ORDER:
+            self._theme_combo.addItem(THEMES[key].label, key)
+        # Set current theme
+        current_theme = config.overlay.theme
+        if current_theme and current_theme in THEMES:
+            idx = THEME_ORDER.index(current_theme) + 1  # +1 for "Custom"
+            self._theme_combo.setCurrentIndex(idx)
+        else:
+            self._theme_combo.setCurrentIndex(0)
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        theme_row.addWidget(self._theme_combo, 1)
+        layout.addLayout(theme_row)
+
+        layout.addSpacing(4)
+
         # Live preview
         self._preview = WaveformPreview()
         self._preview.setFixedHeight(60)
         self._preview.set_opacity(config.overlay.opacity)
         self._preview.set_color(self._color)
         self._preview.set_bg_color(self._bg_color)
+        self._preview.set_gradient(
+            config.overlay.gradient,
+            [QColor(c) for c in config.overlay.gradient_colors]
+            if config.overlay.gradient_colors else None,
+        )
         layout.addWidget(self._preview)
 
         layout.addSpacing(4)
@@ -214,11 +284,8 @@ class SettingsWindow(QWidget):
 
         # Waveform color picker
         wave_color_row = QHBoxLayout()
-        wave_color_row.addWidget(QLabel("Waveform Color"))
-        self._color_btn = QPushButton()
-        self._color_btn.setFixedSize(60, 28)
-        self._update_color_btn()
-        self._color_btn.clicked.connect(self._pick_color)
+        wave_color_row.addWidget(QLabel("Bar Color"))
+        self._color_btn = _make_color_btn(self._color, self._pick_color)
         wave_color_row.addWidget(self._color_btn)
         wave_color_row.addStretch()
         layout.addLayout(wave_color_row)
@@ -226,13 +293,37 @@ class SettingsWindow(QWidget):
         # Background color picker
         bg_color_row = QHBoxLayout()
         bg_color_row.addWidget(QLabel("Background Color"))
-        self._bg_color_btn = QPushButton()
-        self._bg_color_btn.setFixedSize(60, 28)
-        self._update_bg_color_btn()
-        self._bg_color_btn.clicked.connect(self._pick_bg_color)
+        self._bg_color_btn = _make_color_btn(self._bg_color, self._pick_bg_color)
         bg_color_row.addWidget(self._bg_color_btn)
         bg_color_row.addStretch()
         layout.addLayout(bg_color_row)
+
+        # ── Gradient ─────────────────────────────────────────────────────────
+        grad_row = QHBoxLayout()
+        grad_row.addWidget(QLabel("Bar Gradient"))
+        self._grad_check = QCheckBox()
+        self._grad_check.setChecked(config.overlay.gradient)
+        self._grad_check.toggled.connect(self._on_gradient_toggled)
+        grad_row.addStretch()
+        grad_row.addWidget(self._grad_check)
+        layout.addLayout(grad_row)
+
+        # Gradient color pickers (start / end)
+        self._grad_colors_row = QHBoxLayout()
+        self._grad_colors_row.addWidget(QLabel("Start"))
+        self._grad_start_btn = _make_color_btn(self._grad_start, self._pick_grad_start)
+        self._grad_colors_row.addWidget(self._grad_start_btn)
+        self._grad_colors_row.addSpacing(8)
+        self._grad_colors_row.addWidget(QLabel("End"))
+        self._grad_end_btn = _make_color_btn(self._grad_end, self._pick_grad_end)
+        self._grad_colors_row.addWidget(self._grad_end_btn)
+        self._grad_colors_row.addStretch()
+
+        # Wrap in a widget so we can show/hide it
+        self._grad_colors_widget = QWidget()
+        self._grad_colors_widget.setLayout(self._grad_colors_row)
+        self._grad_colors_widget.setVisible(config.overlay.gradient)
+        layout.addWidget(self._grad_colors_widget)
 
         # ── Tidier ──────────────────────────────────────────────────────────
         layout.addSpacing(12)
@@ -284,9 +375,72 @@ class SettingsWindow(QWidget):
         save_btn.clicked.connect(self._save)
         layout.addWidget(save_btn)
 
+        # Track whether we're programmatically updating controls
+        self._updating = False
+
+    # ── Theme handling ────────────────────────────────────────────────────
+
+    def _on_theme_changed(self, index: int):
+        if self._updating:
+            return
+        if index == 0:
+            # "Custom" selected — keep current values
+            return
+        theme_key = self._theme_combo.itemData(index)
+        if theme_key is None or theme_key not in THEMES:
+            return
+        theme = THEMES[theme_key]
+
+        self._updating = True
+
+        # Apply theme values to controls
+        self._color = QColor(theme.color)
+        self._bg_color = QColor(theme.bg_color)
+        self._update_color_btn()
+        self._update_bg_color_btn()
+        self._preview.set_color(self._color)
+        self._preview.set_bg_color(self._bg_color)
+
+        # Opacity
+        self._opacity_slider.setValue(int(theme.opacity * 100))
+
+        # Gradient
+        has_gradient = len(theme.gradient_colors) >= 2
+        self._grad_check.setChecked(has_gradient)
+        if has_gradient:
+            self._grad_start = QColor(theme.gradient_colors[0])
+            self._grad_end = QColor(theme.gradient_colors[-1])
+            self._gradient_colors_raw = list(theme.gradient_colors)
+            self._grad_start_btn.setStyleSheet(
+                _COLOR_BTN_STYLE.format(hex=self._grad_start.name())
+            )
+            self._grad_end_btn.setStyleSheet(
+                _COLOR_BTN_STYLE.format(hex=self._grad_end.name())
+            )
+            gc = [QColor(c) for c in theme.gradient_colors]
+            self._preview.set_gradient(True, gc)
+        else:
+            self._gradient_colors_raw = []
+            self._preview.set_gradient(False)
+
+        self._grad_colors_widget.setVisible(has_gradient)
+
+        self._updating = False
+
+    def _mark_custom(self):
+        """Switch the theme dropdown to Custom when the user manually edits a value."""
+        if not self._updating:
+            self._updating = True
+            self._theme_combo.setCurrentIndex(0)
+            self._updating = False
+
+    # ── Tidier ────────────────────────────────────────────────────────────
+
     def _on_tidier_toggled(self, enabled: bool):
         self._tidier_model_combo.setEnabled(enabled)
         self._tidier_prompt.setEnabled(enabled)
+
+    # ── Overlay callbacks ─────────────────────────────────────────────────
 
     def showEvent(self, a0):  # type: ignore[override]
         super().showEvent(a0)
@@ -300,23 +454,25 @@ class SettingsWindow(QWidget):
     def _on_opacity_changed(self, value: int):
         self._opacity_label.setText(f"{value}%")
         self._preview.set_opacity(value / 100.0)
+        self._mark_custom()
 
     def _update_color_btn(self):
         self._color_btn.setStyleSheet(
-            f"background-color: {self._color.name()}; border: 1px solid #888; border-radius: 4px;"
+            _COLOR_BTN_STYLE.format(hex=self._color.name())
         )
 
     def _update_bg_color_btn(self):
         self._bg_color_btn.setStyleSheet(
-            f"background-color: {self._bg_color.name()}; border: 1px solid #888; border-radius: 4px;"
+            _COLOR_BTN_STYLE.format(hex=self._bg_color.name())
         )
 
     def _pick_color(self):
-        color = QColorDialog.getColor(self._color, self, "Waveform Color")
+        color = QColorDialog.getColor(self._color, self, "Bar Color")
         if color.isValid():
             self._color = color
             self._update_color_btn()
             self._preview.set_color(color)
+            self._mark_custom()
 
     def _pick_bg_color(self):
         color = QColorDialog.getColor(self._bg_color, self, "Background Color")
@@ -324,6 +480,49 @@ class SettingsWindow(QWidget):
             self._bg_color = color
             self._update_bg_color_btn()
             self._preview.set_bg_color(color)
+            self._mark_custom()
+
+    # ── Gradient callbacks ────────────────────────────────────────────────
+
+    def _on_gradient_toggled(self, checked: bool):
+        self._grad_colors_widget.setVisible(checked)
+        if checked:
+            gc = self._current_gradient_qcolors()
+            self._preview.set_gradient(True, gc)
+        else:
+            self._preview.set_gradient(False)
+        self._mark_custom()
+
+    def _current_gradient_qcolors(self) -> list[QColor]:
+        """Build the QColor list from current gradient state."""
+        if self._gradient_colors_raw and len(self._gradient_colors_raw) >= 2:
+            return [QColor(c) for c in self._gradient_colors_raw]
+        return [QColor(self._grad_start), QColor(self._grad_end)]
+
+    def _pick_grad_start(self):
+        color = QColorDialog.getColor(self._grad_start, self, "Gradient Start")
+        if color.isValid():
+            self._grad_start = color
+            self._grad_start_btn.setStyleSheet(
+                _COLOR_BTN_STYLE.format(hex=color.name())
+            )
+            # Reset raw list to 2-stop when user manually picks
+            self._gradient_colors_raw = [self._grad_start.name(), self._grad_end.name()]
+            self._preview.set_gradient(True, self._current_gradient_qcolors())
+            self._mark_custom()
+
+    def _pick_grad_end(self):
+        color = QColorDialog.getColor(self._grad_end, self, "Gradient End")
+        if color.isValid():
+            self._grad_end = color
+            self._grad_end_btn.setStyleSheet(
+                _COLOR_BTN_STYLE.format(hex=color.name())
+            )
+            self._gradient_colors_raw = [self._grad_start.name(), self._grad_end.name()]
+            self._preview.set_gradient(True, self._current_gradient_qcolors())
+            self._mark_custom()
+
+    # ── Save ──────────────────────────────────────────────────────────────
 
     def _save(self):
         # Hotkey
@@ -342,6 +541,26 @@ class SettingsWindow(QWidget):
         self._config.overlay.height = self._height_spin.value()
         self._config.overlay.color = self._color.name()
         self._config.overlay.bg_color = self._bg_color.name()
+
+        # Theme
+        idx = self._theme_combo.currentIndex()
+        if idx > 0:
+            self._config.overlay.theme = self._theme_combo.itemData(idx) or ""
+        else:
+            self._config.overlay.theme = ""
+
+        # Gradient
+        self._config.overlay.gradient = self._grad_check.isChecked()
+        if self._config.overlay.gradient:
+            if self._gradient_colors_raw and len(self._gradient_colors_raw) >= 2:
+                self._config.overlay.gradient_colors = list(self._gradient_colors_raw)
+            else:
+                self._config.overlay.gradient_colors = [
+                    self._grad_start.name(),
+                    self._grad_end.name(),
+                ]
+        else:
+            self._config.overlay.gradient_colors = []
 
         # Tidier
         self._config.tidier.enabled = self._tidier_enabled.isChecked()
@@ -372,6 +591,9 @@ class SettingsWindow(QWidget):
                 "opacity": self._config.overlay.opacity,
                 "color": self._config.overlay.color,
                 "bg_color": self._config.overlay.bg_color,
+                "theme": self._config.overlay.theme,
+                "gradient": self._config.overlay.gradient,
+                "gradient_colors": self._config.overlay.gradient_colors,
             },
             "tidier": {
                 "enabled": self._config.tidier.enabled,

@@ -49,6 +49,9 @@ class OverlayConfig:
     opacity: float = 0.85
     color: str = "#FF6B6B"
     bg_color: str = "#1E1E1E"
+    theme: str = ""  # theme name from themes.py, empty = custom
+    gradient: bool = False
+    gradient_colors: list[str] = field(default_factory=list)  # left-to-right color stops
 
 
 @dataclass
