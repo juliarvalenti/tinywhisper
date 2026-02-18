@@ -319,12 +319,14 @@ class WelcomeWindow(QWidget):
 
         icon_lbl = QLabel()
         icon_path = Path(__file__).parent.parent / "icon.png"
-        icon_px = QPixmap(str(icon_path)).scaled(
-            48, 48,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        icon_lbl.setPixmap(icon_px)
+        icon_px = QPixmap(str(icon_path))
+        if not icon_px.isNull():
+            icon_px = icon_px.scaled(
+                48, 48,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            icon_lbl.setPixmap(icon_px)
         icon_lbl.setFixedSize(48, 48)
         header_lay.addWidget(icon_lbl)
 
