@@ -26,6 +26,8 @@ dependencies = [
     "dacite>=1.8",
     "parakeet-mlx>=0.1",
     "pyobjc-framework-ServiceManagement>=9.0",
+    "pyobjc-framework-AVFoundation>=9.0",
+    "pynput>=1.7",
 ]
 
 [project.optional-dependencies]
