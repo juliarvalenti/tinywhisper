@@ -25,6 +25,7 @@ dependencies = [
     "pyyaml>=6.0",
     "dacite>=1.8",
     "parakeet-mlx>=0.1",
+    "pyobjc-framework-ServiceManagement>=9.0",
 ]
 
 [project.optional-dependencies]

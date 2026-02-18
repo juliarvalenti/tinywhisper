@@ -20,7 +20,9 @@ from tinywhisper.overlay import WaveformOverlay
 from tinywhisper.recorder import Recorder
 from tinywhisper.settings import SettingsWindow
 from tinywhisper.transcriber import TranscriptionWorker, create_engine
-from tinywhisper.welcome import WelcomeWindow, _list_input_devices
+from tinywhisper.welcome import (
+    WelcomeWindow, _list_input_devices, is_launch_at_startup, set_launch_at_startup,
+)
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ class TinyWhisperApp:
         )
         self._welcome.device_changed = self._on_device_changed
         self._welcome.hotkey_changed = self._on_welcome_hotkey_changed
+        self._welcome.open_settings = self._settings.show
 
         # Connections
         self._hotkey.toggled.connect(self._on_toggle)
@@ -119,6 +122,13 @@ class TinyWhisperApp:
         self._device_menu.aboutToShow.connect(self._refresh_device_menu)
 
         menu.addSeparator()
+
+        self._startup_action = QAction("Launch at Startup", menu)
+        self._startup_action.setCheckable(True)
+        self._startup_action.setChecked(is_launch_at_startup())
+        self._startup_action.triggered.connect(self._on_startup_toggled)
+        menu.addAction(self._startup_action)
+
         settings_action = QAction("Settings…", menu)
         settings_action.triggered.connect(self._settings.show)
         menu.addAction(settings_action)
@@ -140,6 +150,11 @@ class TinyWhisperApp:
     def _refresh_tray_info(self):
         self._memory_action.setText(f"Memory: {_get_memory_mb()} MB")
         self._hotkey_action.setText(f"Hotkey: {self._hotkey_label()}")
+        self._startup_action.setChecked(is_launch_at_startup())
+
+    def _on_startup_toggled(self, checked: bool):
+        set_launch_at_startup(checked)
+        self._welcome.refresh_startup()
 
     def _set_status(self, text: str):
         self._status_action.setText(text)
