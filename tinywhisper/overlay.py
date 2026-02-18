@@ -41,15 +41,15 @@ class WaveformOverlay(QWidget):
         y = geo.y() + 40
         self.move(x, y)
 
-    def showEvent(self, event):
-        super().showEvent(event)
+    def showEvent(self, a0):  # type: ignore[override]
+        super().showEvent(a0)
         self._bars.clear()
 
     def push_amplitude(self, amplitude: float):
         self._bars.append(min(amplitude * 8, 1.0))
         self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, a0):  # type: ignore[override]
         w = self.width()
         h = self.height()
         painter = QPainter(self)

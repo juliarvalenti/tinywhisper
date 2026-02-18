@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-import Quartz
+import Quartz  # pyright: ignore[reportMissingImports]
 from PyQt6.QtCore import QObject, pyqtSignal
 
 log = logging.getLogger(__name__)

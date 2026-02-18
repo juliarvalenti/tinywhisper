@@ -37,7 +37,7 @@ class ParakeetEngine(TranscriptionEngine):
     def transcribe(self, wav_path: Path) -> str:
         if self._model is None:
             self.load()
-        result = self._model.transcribe(wav_path)
+        result = self._model.transcribe(wav_path)  # pyright: ignore[reportOptionalMemberAccess]
         return result.text.strip()
 
 
@@ -56,7 +56,7 @@ class WhisperEngine(TranscriptionEngine):
             str(wav_path),
             path_or_hf_repo=self._model_name,
         )
-        return result["text"].strip()
+        return str(result["text"]).strip()
 
 
 def create_engine(config: TranscriptionConfig) -> TranscriptionEngine:

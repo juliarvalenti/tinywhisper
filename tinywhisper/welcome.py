@@ -2,8 +2,9 @@
 
 import logging
 import subprocess
+from collections.abc import Callable
 
-import Quartz
+import Quartz  # pyright: ignore[reportMissingImports]
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -39,13 +40,13 @@ def _check_input_monitoring() -> bool:
 
 
 def _check_accessibility() -> bool:
-    from ApplicationServices import AXIsProcessTrusted
+    from ApplicationServices import AXIsProcessTrusted  # pyright: ignore[reportMissingImports]
     return AXIsProcessTrusted()
 
 
 def _check_microphone() -> int:
     """Return AVAuthorizationStatus: 0=notDetermined, 1=restricted, 2=denied, 3=authorized."""
-    import AVFoundation
+    import AVFoundation  # pyright: ignore[reportMissingImports]
     return AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(AVFoundation.AVMediaTypeAudio)
 
 
@@ -123,8 +124,8 @@ KEYS = ["Space", "Tab", "Enter", "F1", "F2", "F3", "F4", "F5",
 
 
 class WelcomeWindow(QWidget):
-    device_changed = None  # set by app.py
-    hotkey_changed = None  # set by app.py
+    device_changed: Callable[..., None] | None = None  # set by app.py
+    hotkey_changed: Callable[..., None] | None = None  # set by app.py
 
     def __init__(self, hotkey_label: str, model_label: str, current_device: str | None = None,
                  current_modifier: str = "option", current_key: str = "space", parent=None):
@@ -247,7 +248,7 @@ class WelcomeWindow(QWidget):
         AVCaptureDeviceInput which reliably triggers the TCC prompt when mic access
         is undetermined.
         """
-        import AVFoundation
+        import AVFoundation  # pyright: ignore[reportMissingImports]
 
         status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
             AVFoundation.AVMediaTypeAudio
