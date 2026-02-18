@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icon.png" width="128" alt="TinyWhisper icon">
+</p>
+
 # TinyWhisper
 
 Local voice-to-text for macOS Apple Silicon. Press a hotkey, speak, and the transcription is pasted at your cursor.
