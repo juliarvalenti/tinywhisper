@@ -37,7 +37,7 @@ class ParakeetEngine(TranscriptionEngine):
     def transcribe(self, wav_path: Path) -> str:
         if self._model is None:
             self.load()
-        result = self._model.transcribe(wav_path)
+        result = self._model.transcribe(wav_path)  # pyright: ignore[reportOptionalMemberAccess]
         return result.text.strip()
 
 
@@ -46,11 +46,8 @@ class WhisperEngine(TranscriptionEngine):
         self._model_name = model_name
 
     def load(self):
-        import mlx_whisper
-
-        # Trigger model download/load by running a dummy transcribe
-        # mlx_whisper doesn't expose a separate load API
-        self._model_name  # just store; model is cached on first use
+        import mlx_whisper  # noqa: F401 — ensures package is importable at startup
+        # mlx_whisper doesn't expose a separate load API; model is cached on first use
 
     def transcribe(self, wav_path: Path) -> str:
         import mlx_whisper
@@ -59,7 +56,7 @@ class WhisperEngine(TranscriptionEngine):
             str(wav_path),
             path_or_hf_repo=self._model_name,
         )
-        return result["text"].strip()
+        return str(result["text"]).strip()
 
 
 def create_engine(config: TranscriptionConfig) -> TranscriptionEngine:

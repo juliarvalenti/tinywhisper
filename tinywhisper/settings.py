@@ -70,7 +70,7 @@ class WaveformPreview(QWidget):
             self._bars[i] = max(0.05, min(1.0, wave + noise))
         self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, a0):  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -216,13 +216,13 @@ class SettingsWindow(QWidget):
         save_btn.clicked.connect(self._save)
         layout.addWidget(save_btn)
 
-    def showEvent(self, event):
-        super().showEvent(event)
+    def showEvent(self, a0):  # type: ignore[override]
+        super().showEvent(a0)
         self._preview.reset()
         self._preview.start()
 
-    def hideEvent(self, event):
-        super().hideEvent(event)
+    def hideEvent(self, a0):  # type: ignore[override]
+        super().hideEvent(a0)
         self._preview.stop()
 
     def _on_opacity_changed(self, value: int):

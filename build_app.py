@@ -80,6 +80,9 @@ def build():
     launcher_c = ROOT / "launcher.c"
     launcher_bin = MACOS / APP_NAME
 
+    # Python prefix (e.g. .../Python.framework/Versions/3.12 or .pyenv/versions/3.12.0)
+    prefix = sysconfig.get_config_var("prefix")
+
     subprocess.run(
         [
             "clang",
@@ -88,6 +91,7 @@ def build():
             f"-I{inc}",
             f"-L{lib_dir}",
             f"-lpython{ver}",
+            f'-DPYTHON_PREFIX="{prefix}"',
             "-framework", "CoreFoundation",
             "-Wno-deprecated-declarations",
             str(launcher_c),

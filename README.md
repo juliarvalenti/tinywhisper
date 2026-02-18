@@ -4,6 +4,8 @@ Local voice-to-text for macOS Apple Silicon. Press a hotkey, speak, and the tran
 
 Runs entirely on-device using [MLX](https://github.com/ml-explore/mlx) — no cloud APIs, no subscriptions.
 
+![TinyWhisper running on macOS](screenshot.png)
+
 ## Features
 
 - **Fast local transcription** — Parakeet TDT 0.6b via MLX (~70x realtime)
@@ -21,13 +23,13 @@ Runs entirely on-device using [MLX](https://github.com/ml-explore/mlx) — no cl
 ## Install
 
 ```bash
-pip install -e .
+pip install .
 ```
 
 To also install Whisper support:
 
 ```bash
-pip install -e ".[whisper]"
+pip install ".[whisper]"
 ```
 
 ### macOS .app bundle

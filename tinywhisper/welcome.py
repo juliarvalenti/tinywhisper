@@ -2,30 +2,51 @@
 
 import logging
 import subprocess
+from collections.abc import Callable
 
-import Quartz
+import Quartz  # pyright: ignore[reportMissingImports]
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
+
 log = logging.getLogger(__name__)
 
 # --- Permission checks ---
 
 def _check_input_monitoring() -> bool:
-    return Quartz.CGPreflightListenEventAccess()
+    # CGPreflightListenEventAccess() doesn't update until restart.
+    # Try creating a listen-only event tap as a probe.
+    if Quartz.CGPreflightListenEventAccess():
+        return True
+    try:
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown),
+            lambda proxy, event_type, event, refcon: event,
+            None,
+        )
+        if tap is not None:
+            # Clean up the probe tap immediately
+            Quartz.CFRelease(tap)
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _check_accessibility() -> bool:
-    from ApplicationServices import AXIsProcessTrusted
+    from ApplicationServices import AXIsProcessTrusted  # pyright: ignore[reportMissingImports]
     return AXIsProcessTrusted()
 
 
 def _check_microphone() -> int:
     """Return AVAuthorizationStatus: 0=notDetermined, 1=restricted, 2=denied, 3=authorized."""
-    import AVFoundation
+    import AVFoundation  # pyright: ignore[reportMissingImports]
     return AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(AVFoundation.AVMediaTypeAudio)
 
 
@@ -97,14 +118,21 @@ def _list_input_devices() -> list[dict]:
     ]
 
 
-class WelcomeWindow(QWidget):
-    device_changed = None  # set by app.py
+MODIFIERS = ["Option", "Ctrl", "Cmd", "Shift"]
+KEYS = ["Space", "Tab", "Enter", "F1", "F2", "F3", "F4", "F5",
+        "F6", "F7", "F8", "F9", "F10", "F11", "F12"]
 
-    def __init__(self, hotkey_label: str, model_label: str, current_device: str | None = None, parent=None):
+
+class WelcomeWindow(QWidget):
+    device_changed: Callable[..., None] | None = None  # set by app.py
+    hotkey_changed: Callable[..., None] | None = None  # set by app.py
+
+    def __init__(self, hotkey_label: str, model_label: str, current_device: str | None = None,
+                 current_modifier: str = "option", current_key: str = "space", parent=None):
         super().__init__(parent)
         self._hotkey_label = hotkey_label
         self.setWindowTitle("TinyWhisper")
-        self.setFixedSize(420, 390)
+        self.setFixedSize(420, 440)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
@@ -138,6 +166,33 @@ class WelcomeWindow(QWidget):
         layout.addWidget(self._input_row)
         layout.addWidget(self._accessibility_row)
         layout.addWidget(self._mic_row)
+
+        layout.addSpacing(8)
+
+        # Hotkey selector
+        hk_header = QLabel("Hotkey")
+        hk_header.setFont(QFont(".AppleSystemUIFont", 13, QFont.Weight.Bold))
+        layout.addWidget(hk_header)
+
+        hk_row = QHBoxLayout()
+        self._mod_combo = QComboBox()
+        self._mod_combo.setFont(QFont(".AppleSystemUIFont", 12))
+        self._mod_combo.addItems(MODIFIERS)
+        self._mod_combo.setCurrentText(current_modifier.capitalize())
+        hk_row.addWidget(self._mod_combo)
+        plus_label = QLabel("+")
+        plus_label.setFont(QFont(".AppleSystemUIFont", 12))
+        hk_row.addWidget(plus_label)
+        self._key_combo = QComboBox()
+        self._key_combo.setFont(QFont(".AppleSystemUIFont", 12))
+        self._key_combo.addItems(KEYS)
+        self._key_combo.setCurrentText(current_key.capitalize())
+        hk_row.addWidget(self._key_combo)
+        hk_row.addStretch()
+        layout.addLayout(hk_row)
+
+        self._mod_combo.currentIndexChanged.connect(self._on_hotkey_changed)
+        self._key_combo.currentIndexChanged.connect(self._on_hotkey_changed)
 
         layout.addSpacing(8)
 
@@ -193,7 +248,7 @@ class WelcomeWindow(QWidget):
         AVCaptureDeviceInput which reliably triggers the TCC prompt when mic access
         is undetermined.
         """
-        import AVFoundation
+        import AVFoundation  # pyright: ignore[reportMissingImports]
 
         status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
             AVFoundation.AVMediaTypeAudio
@@ -218,21 +273,24 @@ class WelcomeWindow(QWidget):
             _open_microphone_settings()
 
     def _poll_permissions(self):
-        if not self._input_row.is_granted and _check_input_monitoring():
-            self._input_row.set_granted()
-            log.info("Input Monitoring permission granted")
+        try:
+            if not self._input_row.is_granted and _check_input_monitoring():
+                self._input_row.set_granted()
+                log.info("Input Monitoring permission granted")
 
-        if not self._accessibility_row.is_granted and _check_accessibility():
-            self._accessibility_row.set_granted()
-            log.info("Accessibility permission granted")
+            if not self._accessibility_row.is_granted and _check_accessibility():
+                self._accessibility_row.set_granted()
+                log.info("Accessibility permission granted")
 
-        if not self._mic_row.is_granted and _check_microphone() == 3:
-            self._mic_row.set_granted()
-            log.info("Microphone permission granted")
+            if not self._mic_row.is_granted and _check_microphone() == 3:
+                self._mic_row.set_granted()
+                log.info("Microphone permission granted")
 
-        # Stop polling once all granted
-        if self._input_row.is_granted and self._accessibility_row.is_granted and self._mic_row.is_granted:
-            self._timer.stop()
+            # Stop polling once all granted
+            if self._input_row.is_granted and self._accessibility_row.is_granted and self._mic_row.is_granted:
+                self._timer.stop()
+        except Exception:
+            log.exception("Error polling permissions")
 
     def _populate_devices(self, current_device: str | None):
         self._device_combo.blockSignals(True)
@@ -252,8 +310,15 @@ class WelcomeWindow(QWidget):
         if self.device_changed:
             self.device_changed(device_name)
 
+    def _on_hotkey_changed(self):
+        modifier = self._mod_combo.currentText().lower()
+        key = self._key_combo.currentText().lower()
+        log.info("Hotkey changed to: %s+%s", modifier, key)
+        if self.hotkey_changed:
+            self.hotkey_changed(modifier, key)
+
     def set_ready(self, hotkey_label: str):
-        self._model_status.setText(f"Ready -- press {hotkey_label} to record")
+        self._model_status.setText("Model ready")
         self._model_status.setStyleSheet("color: #4CAF50;")
 
     def set_error(self, msg: str):
