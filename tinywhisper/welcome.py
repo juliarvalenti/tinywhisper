@@ -211,10 +211,6 @@ def _opt_row(label: str, control: QWidget) -> QHBoxLayout:
 # ---------------------------------------------------------------------------
 
 class WelcomeWindow(QWidget):
-    device_changed: Callable[..., None] | None = None
-    hotkey_changed: Callable[..., None] | None = None
-    open_settings: Callable[[], None] | None = None  # set by app.py
-
     def __init__(
         self,
         hotkey_label: str,
@@ -225,6 +221,9 @@ class WelcomeWindow(QWidget):
         parent=None,
     ):
         super().__init__(parent)
+        self.device_changed: Callable[..., None] | None = None  # set by app.py
+        self.hotkey_changed: Callable[..., None] | None = None  # set by app.py
+        self.open_settings: Callable[[], None] | None = None   # set by app.py
         self.setWindowTitle("TinyWhisper")
         self.setFixedSize(430, 460)
 
