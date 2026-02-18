@@ -13,7 +13,7 @@ from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from tinywhisper.clipboard import paste_text
-from tinywhisper.config import AppConfig, CONFIG_DIR, CONFIG_PATH
+from tinywhisper.config import AppConfig, CONFIG_PATH
 from tinywhisper.hotkey import HotkeyListener, request_access
 from tinywhisper.icon import create_tray_icon
 from tinywhisper.overlay import WaveformOverlay
@@ -71,8 +71,11 @@ class TinyWhisperApp:
         self._welcome = WelcomeWindow(
             self._hotkey_label(), self._model_label(),
             current_device=config.recording.device,
+            current_modifier=config.hotkey.modifier,
+            current_key=config.hotkey.key,
         )
         self._welcome.device_changed = self._on_device_changed
+        self._welcome.hotkey_changed = self._on_welcome_hotkey_changed
 
         # Connections
         self._hotkey.toggled.connect(self._on_toggle)
@@ -209,7 +212,6 @@ class TinyWhisperApp:
         log.info("Recording saved: %s", wav_path)
 
         # Don't transcribe empty recordings (causes Metal OOM)
-        import os
         if os.path.getsize(wav_path) < 1000:
             log.info("Skipping empty recording")
             self._set_status("Ready")
@@ -268,10 +270,30 @@ class TinyWhisperApp:
         subprocess.Popen(["open", str(CONFIG_PATH)])
 
     def _on_hotkey_changed(self):
-        """Update hotkey binding."""
+        """Update hotkey binding (from settings window)."""
         self._hotkey.update_binding(self._config.hotkey.modifier, self._config.hotkey.key)
         self._hotkey_action.setText(f"Hotkey: {self._hotkey_label()}")
         log.info("Hotkey updated to %s", self._hotkey_label())
+
+    def _on_welcome_hotkey_changed(self, modifier: str, key: str):
+        """Update hotkey binding (from welcome screen)."""
+        self._config.hotkey.modifier = modifier
+        self._config.hotkey.key = key
+        self._hotkey.update_binding(modifier, key)
+        self._hotkey_action.setText(f"Hotkey: {self._hotkey_label()}")
+        log.info("Hotkey updated to %s", self._hotkey_label())
+
+        # Save to config
+        import yaml
+        data = {}
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH) as f:
+                data = yaml.safe_load(f) or {}
+        data.setdefault("hotkey", {})["modifier"] = modifier
+        data["hotkey"]["key"] = key
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            yaml.dump(data, f, default_flow_style=False)
 
     def _refresh_device_menu(self):
         """Rebuild the audio device submenu with current devices."""

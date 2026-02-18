@@ -18,14 +18,20 @@ log = logging.getLogger("tinywhisper")
 
 def main():
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use line-buffered UTF-8 writes so tracebacks are flushed before abort()
+    log_file = open(LOG_PATH, "a", buffering=1, encoding="utf-8")
+
+    # When launched from Finder (.app), sys.stdout/stderr may be None.
+    # Redirect BEFORE any logging or print() calls.
+    sys.stdout = log_file
+    sys.stderr = log_file
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler(LOG_PATH), logging.StreamHandler()],
+        handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8")],
     )
-    # Redirect print() to log file (captures library output)
-    sys.stdout = open(LOG_PATH, "a")
-    sys.stderr = sys.stdout
     try:
         import os
         config = load_config()
