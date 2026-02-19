@@ -2,6 +2,7 @@
 
 import logging
 import tempfile
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -58,12 +59,11 @@ class Recorder(QObject):
 
         # Ensure any previous stream is fully closed
         if self._stream is not None:
-            try:
-                self._stream.abort()
-                self._stream.close()
-            except Exception:
-                pass
+            stream = self._stream
             self._stream = None
+            t = threading.Thread(target=self._close_stream, args=(stream,), daemon=True)
+            t.start()
+            t.join(timeout=2.0)
 
         self._stream = sd.InputStream(
             samplerate=self._config.sample_rate,
@@ -79,12 +79,15 @@ class Recorder(QObject):
         """Stop capturing and save to a temporary WAV file. Returns the file path."""
         self._poll_timer.stop()
         if self._stream is not None:
-            try:
-                self._stream.abort()  # abort() returns immediately; stop() can block
-                self._stream.close()
-            except Exception:
-                pass
+            stream = self._stream
             self._stream = None
+            # Close on a helper thread to avoid a CoreAudio mutex deadlock:
+            # the main thread calling abort()+close() can deadlock with the
+            # IO thread's startStopCallback when both compete for the same
+            # HAL mutex.
+            t = threading.Thread(target=self._close_stream, args=(stream,), daemon=True)
+            t.start()
+            t.join(timeout=2.0)
 
         audio = np.concatenate(self._chunks) if self._chunks else np.zeros((0, 1), dtype="float32")
         self._chunks.clear()
@@ -101,6 +104,14 @@ class Recorder(QObject):
             log.warning("PortAudio status: %s", status)
         self._chunks.append(indata.copy())
         self._latest_rms = float(np.sqrt(np.mean(indata ** 2)))
+
+    @staticmethod
+    def _close_stream(stream: sd.InputStream) -> None:
+        try:
+            stream.abort()
+            stream.close()
+        except Exception:
+            pass
 
     def _emit_amplitude(self):
         self.amplitude.emit(self._latest_rms)

@@ -1,9 +1,10 @@
 """Frameless transparent overlay with scrolling waveform bars."""
 
 import math
+import os
 from collections import deque
 
-from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtCore import Qt, QRectF, QTimer
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
@@ -69,6 +70,14 @@ class WaveformOverlay(QWidget):
         self.setFixedSize(config.width + self._pad * 2, config.height + self._pad * 2)
         self._position_window()
 
+        # Follow-active-window mode
+        self._follow = config.position == "follow"
+        self._last_pos: tuple[int, int] | None = None
+        if self._follow:
+            self._follow_timer = QTimer(self)
+            self._follow_timer.setInterval(200)
+            self._follow_timer.timeout.connect(self._update_follow_position)
+
     def _position_window(self):
         screen = QApplication.primaryScreen()
         if screen is None:
@@ -78,11 +87,86 @@ class WaveformOverlay(QWidget):
         y = geo.y() + 40 - self._pad
         self.move(x, y)
 
+    # ── Follow active monitor ───────────────────────────────────────────
+
+    def _get_active_screen_geo(self) -> QRectF | None:
+        """Return the available geometry of the screen containing the frontmost window."""
+        try:
+            from AppKit import NSWorkspace
+            import Quartz
+        except ImportError:
+            return None
+
+        front_app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if front_app is None:
+            return None
+        front_pid = front_app.processIdentifier()
+        if front_pid == os.getpid():
+            return None
+
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly
+            | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID,
+        )
+        if windows is None:
+            return None
+
+        for win in windows:
+            if win.get("kCGWindowOwnerPID") != front_pid:
+                continue
+            if win.get("kCGWindowLayer", -1) != 0:
+                continue
+            bounds = win.get("kCGWindowBounds")
+            if bounds is None:
+                continue
+            w = int(bounds["Width"])
+            h = int(bounds["Height"])
+            if w == 0 or h == 0:
+                continue
+            # Find which screen contains this window's center
+            cx = int(bounds["X"]) + w // 2
+            cy = int(bounds["Y"]) + h // 2
+            app = QApplication.instance()
+            if app is not None:
+                for s in app.screens():
+                    if s.geometry().contains(cx, cy):
+                        geo = s.availableGeometry()
+                        return QRectF(geo.x(), geo.y(), geo.width(), geo.height())
+            break
+        return None
+
+    def _update_follow_position(self) -> None:
+        """Reposition overlay at top-center of the active monitor."""
+        geo = self._get_active_screen_geo()
+        if geo is None:
+            self._position_window()
+            return
+
+        x = int(geo.x()) + (int(geo.width()) - self._config.width) // 2 - self._pad
+        y = int(geo.y()) + 40 - self._pad
+
+        pos = (x, y)
+        if pos != self._last_pos:
+            self._last_pos = pos
+            self.move(x, y)
+
+    # ── Visibility events ────────────────────────────────────────────────
+
     def showEvent(self, a0):  # type: ignore[override]
         super().showEvent(a0)
         self._bars.clear()
         self._agc_peak = 0.0
         self._pulse_phase = 0.0
+        if self._follow:
+            self._update_follow_position()
+            self._follow_timer.start()
+
+    def hideEvent(self, a0):  # type: ignore[override]
+        super().hideEvent(a0)
+        if self._follow:
+            self._follow_timer.stop()
+            self._last_pos = None
 
     def push_amplitude(self, amplitude: float):
         # Exponential-decay AGC: instant attack, slow release (~4.6s half-life)

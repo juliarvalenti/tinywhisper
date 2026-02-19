@@ -233,6 +233,20 @@ class SettingsWindow(QWidget):
         theme_row.addWidget(self._theme_combo, 1)
         layout.addLayout(theme_row)
 
+        # Position selector
+        pos_row = QHBoxLayout()
+        pos_row.addWidget(QLabel("Position"))
+        self._position_combo = QComboBox()
+        self._position_combo.addItem("Top Center", "top-center")
+        self._position_combo.addItem("Follow Active Monitor", "follow")
+        current_pos = config.overlay.position
+        for i in range(self._position_combo.count()):
+            if self._position_combo.itemData(i) == current_pos:
+                self._position_combo.setCurrentIndex(i)
+                break
+        pos_row.addWidget(self._position_combo, 1)
+        layout.addLayout(pos_row)
+
         layout.addSpacing(4)
 
         # Live preview
@@ -572,6 +586,7 @@ class SettingsWindow(QWidget):
         )
 
         # Overlay
+        self._config.overlay.position = self._position_combo.currentData()
         self._config.overlay.opacity = self._opacity_slider.value() / 100.0
         self._config.overlay.width = self._width_spin.value()
         self._config.overlay.height = self._height_spin.value()
