@@ -462,7 +462,8 @@ class WelcomeWindow(QWidget):
         mit.setFont(_SMALL)
         right_lay.addWidget(mit)
 
-        copy_lbl = QLabel("Copyright © 2025 Julia Valenti")
+        from datetime import date
+        copy_lbl = QLabel(f"Copyright © {date.today().year} Julia Valenti")
         copy_lbl.setFont(_TINY)
         copy_lbl.setStyleSheet("color: #888;")
         right_lay.addWidget(copy_lbl)
