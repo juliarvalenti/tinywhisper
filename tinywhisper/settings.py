@@ -325,6 +325,31 @@ class SettingsWindow(QWidget):
         self._grad_colors_widget.setVisible(config.overlay.gradient)
         layout.addWidget(self._grad_colors_widget)
 
+        # ── Pulse ────────────────────────────────────────────────────────────
+        pulse_row = QHBoxLayout()
+        pulse_row.addWidget(QLabel("Background Pulse"))
+        self._pulse_check = QCheckBox()
+        self._pulse_check.setChecked(config.overlay.pulse)
+        pulse_row.addStretch()
+        self._pulse_color = QColor(config.overlay.pulse_color)
+        self._pulse_color_btn = _make_color_btn(self._pulse_color, self._pick_pulse_color)
+        pulse_row.addWidget(self._pulse_color_btn)
+        pulse_row.addWidget(self._pulse_check)
+        layout.addLayout(pulse_row)
+
+        # Pulse opacity slider
+        pulse_opacity_row = QHBoxLayout()
+        pulse_opacity_row.addWidget(QLabel("Pulse Intensity"))
+        self._pulse_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._pulse_opacity_slider.setRange(0, 100)
+        self._pulse_opacity_slider.setValue(int(config.overlay.pulse_opacity * 100))
+        self._pulse_opacity_label = QLabel(f"{int(config.overlay.pulse_opacity * 100)}%")
+        self._pulse_opacity_label.setFixedWidth(40)
+        self._pulse_opacity_slider.valueChanged.connect(self._on_pulse_opacity_changed)
+        pulse_opacity_row.addWidget(self._pulse_opacity_slider)
+        pulse_opacity_row.addWidget(self._pulse_opacity_label)
+        layout.addLayout(pulse_opacity_row)
+
         # ── Tidier ──────────────────────────────────────────────────────────
         layout.addSpacing(12)
         tidier_header = QLabel("Tidier")
@@ -484,6 +509,17 @@ class SettingsWindow(QWidget):
 
     # ── Gradient callbacks ────────────────────────────────────────────────
 
+    def _pick_pulse_color(self):
+        color = QColorDialog.getColor(self._pulse_color, self, "Pulse Glow Color")
+        if color.isValid():
+            self._pulse_color = color
+            self._pulse_color_btn.setStyleSheet(
+                _COLOR_BTN_STYLE.format(hex=color.name())
+            )
+
+    def _on_pulse_opacity_changed(self, value: int):
+        self._pulse_opacity_label.setText(f"{value}%")
+
     def _on_gradient_toggled(self, checked: bool):
         self._grad_colors_widget.setVisible(checked)
         if checked:
@@ -549,6 +585,11 @@ class SettingsWindow(QWidget):
         else:
             self._config.overlay.theme = ""
 
+        # Pulse
+        self._config.overlay.pulse = self._pulse_check.isChecked()
+        self._config.overlay.pulse_color = self._pulse_color.name()
+        self._config.overlay.pulse_opacity = self._pulse_opacity_slider.value() / 100.0
+
         # Gradient
         self._config.overlay.gradient = self._grad_check.isChecked()
         if self._config.overlay.gradient:
@@ -594,6 +635,9 @@ class SettingsWindow(QWidget):
                 "theme": self._config.overlay.theme,
                 "gradient": self._config.overlay.gradient,
                 "gradient_colors": self._config.overlay.gradient_colors,
+                "pulse": self._config.overlay.pulse,
+                "pulse_color": self._config.overlay.pulse_color,
+                "pulse_opacity": self._config.overlay.pulse_opacity,
             },
             "tidier": {
                 "enabled": self._config.tidier.enabled,

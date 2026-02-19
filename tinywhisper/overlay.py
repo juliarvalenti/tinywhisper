@@ -1,9 +1,10 @@
 """Frameless transparent overlay with scrolling waveform bars."""
 
+import math
 from collections import deque
 
 from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from tinywhisper.config import OverlayConfig
@@ -38,12 +39,14 @@ class WaveformOverlay(QWidget):
 
     MAX_BARS = 50
     _AGC_DECAY = 0.995  # per-frame decay at ~30fps → peak halves in ~4.6s
+    _GLOW_PAD = 48  # extra pixels on each side for pulse glow
 
     def __init__(self, config: OverlayConfig, parent=None):
         super().__init__(parent)
         self._config = config
         self._bars: deque[float] = deque(maxlen=self.MAX_BARS)
         self._agc_peak: float = 0.0
+        self._pulse_phase: float = 0.0
         self._color = QColor(config.color)
         self._bg_color = QColor(config.bg_color)
 
@@ -51,15 +54,19 @@ class WaveformOverlay(QWidget):
         self._gradient = config.gradient and len(config.gradient_colors) >= 2
         self._gradient_colors = [QColor(c) for c in config.gradient_colors]
 
+        # Extra padding for glow when pulse is enabled
+        self._pad = self._GLOW_PAD if config.pulse else 0
+
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
+            | Qt.WindowType.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
-        self.setFixedSize(config.width, config.height)
+        self.setFixedSize(config.width + self._pad * 2, config.height + self._pad * 2)
         self._position_window()
 
     def _position_window(self):
@@ -67,14 +74,15 @@ class WaveformOverlay(QWidget):
         if screen is None:
             return
         geo = screen.availableGeometry()
-        x = geo.x() + (geo.width() - self._config.width) // 2
-        y = geo.y() + 40
+        x = geo.x() + (geo.width() - self._config.width) // 2 - self._pad
+        y = geo.y() + 40 - self._pad
         self.move(x, y)
 
     def showEvent(self, a0):  # type: ignore[override]
         super().showEvent(a0)
         self._bars.clear()
         self._agc_peak = 0.0
+        self._pulse_phase = 0.0
 
     def push_amplitude(self, amplitude: float):
         # Exponential-decay AGC: instant attack, slow release (~4.6s half-life)
@@ -82,13 +90,55 @@ class WaveformOverlay(QWidget):
         floor = 0.005
         normalized = amplitude / max(self._agc_peak, floor)
         self._bars.append(min(normalized, 1.0))
+        self._pulse_phase += 0.08
         self.update()
 
+    def _glow_color(self) -> QColor:
+        """Return the configured pulse glow color."""
+        return QColor(self._config.pulse_color)
+
     def paintEvent(self, a0):  # type: ignore[override]
-        w = self.width()
-        h = self.height()
+        p = self._pad
+        w = self._config.width
+        h = self._config.height
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # --- Pulsing glow halo behind the background ---
+        if self._config.pulse and self._bars:
+            glow_base = self._glow_color()
+            pulse_t = (math.sin(self._pulse_phase) + 1.0) / 2.0
+            glow_radius = self._GLOW_PAD - 4  # stop 4px before widget edge
+            # Inner boundary: flush with background edge
+            inner_clip = QPainterPath()
+            inner_clip.addRoundedRect(QRectF(p, p, w, h), 14, 14)
+            painter.save()
+            painter.setPen(Qt.PenStyle.NoPen)
+            step = 3  # draw every 3px for performance
+            intensity = self._config.pulse_opacity
+            for i in range(glow_radius, 2, -step):
+                # Gaussian falloff: peaks near background, fades to zero
+                dist = i / glow_radius  # 0 = edge, 1 = far
+                alpha = int(80 * intensity * pulse_t * math.exp(-4.0 * dist * dist))
+                if alpha < 1:
+                    continue
+                outer = QPainterPath()
+                outer.addRoundedRect(
+                    QRectF(p - i, p - i, w + i * 2, h + i * 2),
+                    14 + i, 14 + i,
+                )
+                inner = QPainterPath()
+                inner.addRoundedRect(
+                    QRectF(p - i + step, p - i + step,
+                           w + (i - step) * 2, h + (i - step) * 2),
+                    14 + max(0, i - step), 14 + max(0, i - step),
+                )
+                ring = outer - inner
+                glow = QColor(glow_base)
+                glow.setAlpha(alpha)
+                painter.setBrush(glow)
+                painter.drawPath(ring)
+            painter.restore()
 
         # --- Background with subtle vertical gradient for depth ---
         bg_top = QColor(self._bg_color)
@@ -102,13 +152,13 @@ class WaveformOverlay(QWidget):
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(bg_grad)
-        painter.drawRoundedRect(QRectF(0, 0, w, h), 14, 14)
+        painter.drawRoundedRect(QRectF(p, p, w, h), 14, 14)
 
         # --- Subtle inner border / highlight at top edge ---
         highlight = QColor(255, 255, 255, 18)
         painter.setPen(QPen(highlight, 1.0))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 14, 14)
+        painter.drawRoundedRect(QRectF(p + 0.5, p + 0.5, w - 1, h - 1), 14, 14)
 
         if not self._bars:
             painter.end()
@@ -118,8 +168,8 @@ class WaveformOverlay(QWidget):
         bar_w = max(3, (w - 24) // self.MAX_BARS - 1)
         gap = 1
         total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
-        x_start = (w - total_bar_w) / 2
-        mid_y = h / 2
+        x_start = p + (w - total_bar_w) / 2
+        mid_y = p + h / 2
         n_bars = len(self._bars)
 
         painter.setPen(Qt.PenStyle.NoPen)

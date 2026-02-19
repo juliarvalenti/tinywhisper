@@ -52,6 +52,9 @@ class OverlayConfig:
     theme: str = ""  # theme name from themes.py, empty = custom
     gradient: bool = False
     gradient_colors: list[str] = field(default_factory=list)  # left-to-right color stops
+    pulse: bool = True  # subtle background glow pulse
+    pulse_color: str = "#FFFFFF"  # glow halo color
+    pulse_opacity: float = 0.5  # glow intensity (0.0 – 1.0)
 
 
 @dataclass
