@@ -27,17 +27,18 @@ Runs entirely on-device using [MLX](https://github.com/ml-explore/mlx) — no cl
 
 - macOS on Apple Silicon (M1/M2/M3/M4)
 - Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (recommended — manages Python and dependencies)
 
 ## Install
 
 ```bash
-pip install .
+uv sync
 ```
 
 To also install Whisper support:
 
 ```bash
-pip install ".[whisper]"
+uv sync --extra whisper
 ```
 
 ### macOS .app bundle
@@ -45,15 +46,22 @@ pip install ".[whisper]"
 Build a native menu-bar app (recommended — gives TinyWhisper its own identity for macOS permissions):
 
 ```bash
-python3 build_app.py
+uv sync --no-editable   # required — editable installs trigger a Documents TCC prompt
+uv run build_app.py
 cp -r TinyWhisper.app /Applications/   # optional
 open TinyWhisper.app
+```
+
+Or use the all-in-one setup script to install, build, and launch with animated progress:
+
+```bash
+./setup.sh
 ```
 
 ## Usage
 
 ```bash
-tinywhisper            # run from terminal
+uv run tinywhisper     # run from terminal
 # or
 open TinyWhisper.app   # run as native app
 ```

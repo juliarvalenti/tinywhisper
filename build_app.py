@@ -6,15 +6,18 @@ the running binary as 'TinyWhisper' and grants Input Monitoring / Accessibility
 permissions to it directly (no need to whitelist Python or your terminal).
 
 Usage:
-    python3 build_app.py
+    uv run build_app.py
     open TinyWhisper.app
     cp -r TinyWhisper.app /Applications/   # optional
 """
 
 import argparse
 import shutil
+import site
 import subprocess
+import sys
 import sysconfig
+import time
 from pathlib import Path
 
 APP_NAME = "TinyWhisper"
@@ -88,24 +91,48 @@ def build():
     launcher_c = ROOT / "launcher.c"
     launcher_bin = MACOS / APP_NAME
 
-    # Python prefix (e.g. .../Python.framework/Versions/3.12 or .pyenv/versions/3.12.0)
-    prefix = sysconfig.get_config_var("prefix")
+    # Python prefix — use installed_base so we always get the real Python
+    # (not the venv), which is what PYTHONHOME needs for stdlib access
+    prefix = sysconfig.get_config_var("installed_base")
 
-    subprocess.run(
-        [
-            "clang",
-            "-arch", "arm64",
-            "-o", str(launcher_bin),
-            f"-I{inc}",
-            f"-L{lib_dir}",
-            f"-lpython{ver}",
-            f'-DPYTHON_PREFIX="{prefix}"',
-            "-framework", "CoreFoundation",
-            "-Wno-deprecated-declarations",
-            str(launcher_c),
-        ],
-        check=True,
-    )
+    clang_args = [
+        "clang",
+        "-arch", "arm64",
+        "-o", str(launcher_bin),
+        f"-I{inc}",
+        f"-L{lib_dir}",
+        f"-lpython{ver}",
+        f'-DPYTHON_PREFIX="{prefix}"',
+        "-framework", "CoreFoundation",
+        "-Wno-deprecated-declarations",
+        str(launcher_c),
+    ]
+
+    # Detect venv site-packages for bundling
+    in_venv = sys.prefix != sys.base_prefix
+    if in_venv:
+        venv_site_packages = site.getsitepackages()[0]
+        print(f"  Venv detected: {sys.prefix}")
+        print(f"  Site-packages: {venv_site_packages}")
+
+    subprocess.run(clang_args, check=True)
+
+    # Copy site-packages into bundle so the .app is self-contained
+    # (avoids TCC Documents prompt when repo lives under ~/Documents/)
+    if in_venv:
+        dest = RESOURCES / "site-packages"
+        print(f"  Copying site-packages into bundle...")
+        t0 = time.monotonic()
+        shutil.copytree(
+            venv_site_packages,
+            dest,
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*.pyc", "*.pth", "_virtualenv.*",
+            ),
+        )
+        elapsed = time.monotonic() - t0
+        size_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / 1e6
+        print(f"  Copied site-packages ({size_mb:.0f} MB) in {elapsed:.1f}s")
 
     # Ad-hoc codesign
     subprocess.run(
@@ -115,6 +142,8 @@ def build():
 
     print(f"Built {APP}")
     print(f"  Python: {framework}")
+    if in_venv:
+        print("  Site-packages bundled into Resources/")
     print()
     print("To launch:")
     print(f"  open {APP}")

@@ -12,30 +12,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          pip install ruff
+      - uses: astral-sh/setup-uv@v5
 
       - name: Lint
-        run: ruff check tinywhisper/
+        run: uv run ruff check tinywhisper/
 
   typecheck:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: |
-          pip install pyright
-          pip install -e ".[whisper]"
+        run: uv sync --extra whisper
 
       - name: Type check
-        run: pyright tinywhisper/
+        run: uv run pyright tinywhisper/
+
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
