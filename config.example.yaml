@@ -17,7 +17,7 @@ overlay:
   enabled: true
   width: 300
   height: 60
-  position: "top-center"
+  position: "top-center"   # "top-center" or "follow" (follow active monitor)
   opacity: 0.85
   color: "#FF6B6B"
   bg_color: "#1E1E1E"
