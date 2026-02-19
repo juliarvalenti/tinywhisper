@@ -126,7 +126,9 @@ def build():
         shutil.copytree(
             venv_site_packages,
             dest,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*.pyc", "*.pth", "_virtualenv.*",
+            ),
         )
         elapsed = time.monotonic() - t0
         size_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / 1e6

@@ -6,8 +6,8 @@ Build the native macOS .app bundle for TinyWhisper.
 
 ```bash
 pkill -f TinyWhisper 2>/dev/null   # kill running instance first
-uv sync --no-editable              # non-editable install (required — editable installs trigger Documents TCC prompt)
-uv run build_app.py
+uv sync --no-editable              # non-editable install (required — editable installs create .pth stubs instead of real packages)
+uv run --no-sync build_app.py      # --no-sync prevents uv from re-syncing as editable
 cp -r TinyWhisper.app /Applications/
 ```
 
@@ -16,7 +16,7 @@ cp -r TinyWhisper.app /Applications/
 If the user asks to reset permissions (or uses `--reset-perms`):
 
 ```bash
-uv run build_app.py --reset-perms
+uv run --no-sync build_app.py --reset-perms
 ```
 
 This runs `tccutil reset All com.juliarvalenti.tinywhisper` to clear all TCC permissions, forcing macOS to re-prompt on next launch.
@@ -31,8 +31,9 @@ open /Applications/TinyWhisper.app
 ## Notes
 
 - Requires macOS 13+ on Apple Silicon and Python 3.10+
-- **Always use `uv sync --no-editable` (not `uv sync`)** — editable installs symlink into `~/Documents/` and trigger a macOS TCC permission prompt when the .app imports code
-- The build compiles `launcher.c` against the local Python framework — no rebuild needed for Python-only changes, but you must re-run `uv sync --no-editable` so site-packages is updated
+- **Always use `uv sync --no-editable` before building** — editable installs create `.pth` stubs instead of copying the real package, which breaks the bundled `.app`
+- **Always use `uv run --no-sync`** — `uv run` without `--no-sync` implicitly re-syncs and reinstalls tinywhisper as editable, undoing the `--no-editable` install
+- The build copies venv site-packages into `Contents/Resources/site-packages/` (excluding `__pycache__`, `*.pyc`, `*.pth`, `_virtualenv.*`). The launcher resolves this path relative to itself at runtime using `_NSGetExecutablePath()`, so the bundle is fully self-contained with no references to external paths
 - `launcher.c` sets `PYTHONHOME`, `PYTHONIOENCODING=utf-8`, and `LC_ALL=en_US.UTF-8` at startup — required for Finder launches which have no locale set
 - Each rebuild changes the code signature, which **resets macOS permissions** (Input Monitoring, Accessibility, Microphone). Only rebuild when `launcher.c`, `build_app.py`, or `Info.plist` changes.
 - Ad-hoc codesigning is used (`codesign --force --deep --sign -`)
