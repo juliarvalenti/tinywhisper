@@ -10,3 +10,4 @@ dist/
 TinyWhisper.app/
 TinyWhisper.iconset/
 .venv
+reset-perms.sh

@@ -6,7 +6,7 @@ Build the native macOS .app bundle for TinyWhisper.
 
 ```bash
 pkill -f TinyWhisper 2>/dev/null   # kill running instance first
-uv sync --no-editable              # non-editable install (required — editable installs create .pth stubs instead of real packages)
+uv sync --no-editable --reinstall-package tinywhisper  # force reinstall even if version unchanged
 uv run --no-sync build_app.py      # --no-sync prevents uv from re-syncing as editable
 cp -r TinyWhisper.app /Applications/
 ```
@@ -31,7 +31,7 @@ open /Applications/TinyWhisper.app
 ## Notes
 
 - Requires macOS 13+ on Apple Silicon and Python 3.10+
-- **Always use `uv sync --no-editable` before building** — editable installs create `.pth` stubs instead of copying the real package, which breaks the bundled `.app`
+- **Always use `uv sync --no-editable --reinstall-package tinywhisper`** — `--no-editable` copies the real package (editable installs create `.pth` stubs that break the bundle). `--reinstall-package tinywhisper` forces a rebuild even when the version number hasn't changed, preventing stale code in the bundle.
 - **Always use `uv run --no-sync`** — `uv run` without `--no-sync` implicitly re-syncs and reinstalls tinywhisper as editable, undoing the `--no-editable` install
 - The build copies venv site-packages into `Contents/Resources/site-packages/` (excluding `__pycache__`, `*.pyc`, `*.pth`, `_virtualenv.*`). The launcher resolves this path relative to itself at runtime using `_NSGetExecutablePath()`, so the bundle is fully self-contained with no references to external paths
 - `launcher.c` sets `PYTHONHOME`, `PYTHONIOENCODING=utf-8`, and `LC_ALL=en_US.UTF-8` at startup — required for Finder launches which have no locale set
