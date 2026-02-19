@@ -70,7 +70,7 @@ pass "Dependencies installed"
 
 # ── Phase 2: Build .app bundle ───────────────────────────────────────
 
-uv run build_app.py &>/dev/null &
+uv run --no-sync build_app.py &>/dev/null &
 spin $! "Building TinyWhisper.app..."
 pass "TinyWhisper.app built"
 
