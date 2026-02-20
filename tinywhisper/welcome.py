@@ -130,16 +130,6 @@ def _get_version() -> str:
         return "0.1.0"
 
 
-def _get_git_commit() -> str:
-    try:
-        repo = Path(__file__).parent.parent
-        return subprocess.check_output(
-            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
-    except Exception:
-        return ""
-
 
 # ---------------------------------------------------------------------------
 # UI constants
@@ -435,12 +425,7 @@ class WelcomeWindow(QWidget):
         right_lay.addWidget(_section_label("Version"))
         right_lay.addSpacing(10)
 
-        version = _get_version()
-        commit = _get_git_commit()
-        ver_text = f"v{version}"
-        if commit:
-            ver_text += f"  ·  {commit}"
-        ver_lbl = QLabel(ver_text)
+        ver_lbl = QLabel(f"v{_get_version()}")
         ver_lbl.setFont(_SMALL)
         right_lay.addWidget(ver_lbl)
 
