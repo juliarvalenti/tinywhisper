@@ -38,7 +38,7 @@ from tinywhisper.themes import THEMES, THEME_ORDER
 # ~/.config/tinywhisper/scripts/ at startup.  Settings just stores the path.
 # Known script names — checked against the destination dir to avoid touching
 # the bundle path (which lives under ~/Documents/) on every launch.
-_BUNDLED_SCRIPT_NAMES = ["claude-context.py"]
+_BUNDLED_SCRIPT_NAMES = ["claude-context.py", "README.md"]
 
 
 def _seed_example_scripts(scripts_dir: Path) -> None:
@@ -57,7 +57,8 @@ def _seed_example_scripts(scripts_dir: Path) -> None:
         dst = scripts_dir / name
         if src.exists():
             shutil.copy2(src, dst)
-            dst.chmod(0o755)
+            if dst.suffix != ".md":
+                dst.chmod(0o755)
 
 
 class WaveformPreview(QWidget):
@@ -496,6 +497,9 @@ class SettingsWindow(QWidget):
         self._view_scripts_btn = QPushButton("View Scripts Folder")
         self._view_scripts_btn.clicked.connect(self._open_scripts_folder)
         scripts_row.addWidget(self._view_scripts_btn)
+        self._view_readme_btn = QPushButton("View README")
+        self._view_readme_btn.clicked.connect(self._open_scripts_readme)
+        scripts_row.addWidget(self._view_readme_btn)
         scripts_row.addStretch()
         script_layout.addLayout(scripts_row)
         self._prompt_stack.addWidget(script_page)
@@ -592,6 +596,7 @@ class SettingsWindow(QWidget):
         self._prompt_mode_text.setEnabled(enabled)
         self._prompt_mode_script.setEnabled(enabled)
         self._prompt_stack.setEnabled(enabled)
+        self._view_readme_btn.setEnabled(enabled)
 
     def _open_scripts_folder(self):
         import subprocess
@@ -599,6 +604,14 @@ class SettingsWindow(QWidget):
         SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
         _seed_example_scripts(SCRIPTS_DIR)
         subprocess.Popen(["open", str(SCRIPTS_DIR)])
+
+    def _open_scripts_readme(self):
+        import subprocess
+        from tinywhisper.config import SCRIPTS_DIR
+        SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        _seed_example_scripts(SCRIPTS_DIR)
+        readme = SCRIPTS_DIR / "README.md"
+        subprocess.Popen(["open", str(readme)])
 
     # ── Overlay callbacks ─────────────────────────────────────────────────
 
