@@ -11,7 +11,6 @@ Usage:
     cp -r TinyWhisper.app /Applications/   # optional
 """
 
-import argparse
 import shutil
 import site
 import subprocess
@@ -21,7 +20,7 @@ import time
 from pathlib import Path
 
 APP_NAME = "TinyWhisper"
-BUNDLE_ID = "com.juliarvalenti.tinywhisper"
+BUNDLE_ID = "app.tinywhisper"
 VERSION = "0.1.0"
 
 ROOT = Path(__file__).parent
@@ -140,6 +139,10 @@ def build():
         check=True,
     )
 
+    # Reset TCC permissions so the fresh build gets clean permission prompts
+    # (macOS only — tccutil doesn't exist on Linux/CI, ignore failure)
+    subprocess.run(["tccutil", "reset", "All", BUNDLE_ID], check=False)
+
     print(f"Built {APP}")
     print(f"  Python: {framework}")
     if in_venv:
@@ -152,18 +155,6 @@ def build():
     print(f"  cp -r {APP} /Applications/")
 
 
-def reset_permissions():
-    subprocess.run(["tccutil", "reset", "All", BUNDLE_ID], check=True)
-    print(f"Permissions reset for {BUNDLE_ID}")
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--reset-perms", action="store_true",
-                        help="Reset macOS TCC permissions for the app bundle")
-    args = parser.parse_args()
+    build()
 
-    if args.reset_perms:
-        reset_permissions()
-    else:
-        build()

@@ -124,6 +124,6 @@ def test_info_plist_has_correct_bundle_id() -> None:
     assert INFO_PLIST.is_file(), "Info.plist not found — run build tests in order"
     with open(INFO_PLIST, "rb") as f:
         plist = plistlib.load(f)
-    assert plist.get("CFBundleIdentifier") == "com.juliarvalenti.tinywhisper", (
+    assert plist.get("CFBundleIdentifier") == "app.tinywhisper", (
         f"Unexpected bundle ID: {plist.get('CFBundleIdentifier')}"
     )
