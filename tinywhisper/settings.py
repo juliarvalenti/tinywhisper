@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 from PyQt6.QtCore import Qt, QRectF, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -26,8 +26,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from tinywhisper.config import AppConfig, CONFIG_DIR, CONFIG_PATH
-from tinywhisper.overlay import gradient_color_at
+from tinywhisper.config import AppConfig, CONFIG_DIR, CONFIG_PATH, WaveformStyle
+from tinywhisper.overlay import _braille_bar_char, gradient_color_at
 from tinywhisper.themes import THEMES, THEME_ORDER
 
 # ---------------------------------------------------------------------------
@@ -72,6 +72,7 @@ class WaveformPreview(QWidget):
         self._bg_color = QColor("#1E1E1E")
         self._gradient = False
         self._gradient_colors: list[QColor] = []
+        self._braille = False
         self._phase = 0.0
         self._bars: list[float] = [0.0] * self.MAX_BARS
 
@@ -108,6 +109,10 @@ class WaveformPreview(QWidget):
             self._gradient_colors = list(colors)
         self.update()
 
+    def set_braille(self, enabled: bool):
+        self._braille = enabled
+        self.update()
+
     def _tick(self):
         self._phase += 0.15
         for i in range(self.MAX_BARS):
@@ -140,27 +145,58 @@ class WaveformPreview(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 14, 14)
 
-        # Bars
-        bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
-        gap = 1
-        total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
-        x_start = (w - total_bar_w) / 2
-        mid_y = h / 2
+        if self._braille:
+            # --- Braille dot waveform ---
+            font = QFont("Menlo")
+            font.setPixelSize(max(10, h // 4))
+            painter.setFont(font)
+            fm = QFontMetricsF(font)
 
-        painter.setPen(Qt.PenStyle.NoPen)
-        for i, amp in enumerate(self._bars):
-            bh = max(3, int(amp * (h - 18)))
-            x = x_start + i * (bar_w + gap)
-            y = mid_y - bh / 2
+            char_h = fm.height()
+            n_rows = max(1, round(h / char_h))
 
-            if self._gradient and self._gradient_colors:
-                t = i / max(1, self.MAX_BARS - 1)
-                color = gradient_color_at(self._gradient_colors, t)
-                painter.setBrush(color)
-            else:
-                painter.setBrush(self._color)
+            col_w = max(4, (w - 16) // self.MAX_BARS)
+            total_w = self.MAX_BARS * col_w
+            x_start = (w - total_w) / 2
+            y_start = (h - n_rows * char_h) / 2 + fm.ascent()
 
-            painter.drawRoundedRect(QRectF(x, y, bar_w, bh), 1.5, 1.5)
+            for i in range(self.MAX_BARS):
+                if i >= len(self._bars):
+                    continue
+                amp = self._bars[i]
+                if self._gradient and self._gradient_colors:
+                    t = i / max(1, self.MAX_BARS - 1)
+                    color = gradient_color_at(self._gradient_colors, t)
+                    painter.setPen(QPen(color))
+                else:
+                    painter.setPen(QPen(self._color))
+
+                x = int(x_start + i * col_w)
+                for row in range(n_rows):
+                    ch = _braille_bar_char(row, n_rows, amp)
+                    painter.drawText(x, int(y_start + row * char_h), ch)
+        else:
+            # --- Rectangular bar waveform ---
+            bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
+            gap = 1
+            total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
+            x_start = (w - total_bar_w) / 2
+            mid_y = h / 2
+
+            painter.setPen(Qt.PenStyle.NoPen)
+            for i, amp in enumerate(self._bars):
+                bh = max(3, int(amp * (h - 18)))
+                x = x_start + i * (bar_w + gap)
+                y = mid_y - bh / 2
+
+                if self._gradient and self._gradient_colors:
+                    t = i / max(1, self.MAX_BARS - 1)
+                    color = gradient_color_at(self._gradient_colors, t)
+                    painter.setBrush(color)
+                else:
+                    painter.setBrush(self._color)
+
+                painter.drawRoundedRect(QRectF(x, y, bar_w, bh), 1.5, 1.5)
 
         painter.end()
 
@@ -398,6 +434,22 @@ class SettingsWindow(QWidget):
         pulse_opacity_row.addWidget(self._pulse_opacity_label)
         layout.addLayout(pulse_opacity_row)
 
+        # Waveform style
+        style_row = QHBoxLayout()
+        style_row.addWidget(QLabel("Waveform Style"))
+        self._style_combo = QComboBox()
+        self._style_combo.addItem("Bars", WaveformStyle.BARS)
+        self._style_combo.addItem("Braille Dots", WaveformStyle.BRAILLE)
+        current_style = config.overlay.waveform_style
+        for i in range(self._style_combo.count()):
+            if self._style_combo.itemData(i) is current_style:
+                self._style_combo.setCurrentIndex(i)
+                break
+        self._style_combo.currentIndexChanged.connect(self._on_style_changed)
+        style_row.addWidget(self._style_combo, 1)
+        layout.addLayout(style_row)
+        self._preview.set_braille(current_style is WaveformStyle.BRAILLE)
+
         # ── Tidier ──────────────────────────────────────────────────────────
         layout.addSpacing(12)
         tidier_header = QLabel("Tidier")
@@ -611,6 +663,11 @@ class SettingsWindow(QWidget):
         super().hideEvent(a0)
         self._preview.stop()
 
+    def _on_style_changed(self, index: int):
+        style = self._style_combo.itemData(index)
+        self._preview.set_braille(style is WaveformStyle.BRAILLE)
+        self._mark_custom()
+
     def _on_opacity_changed(self, value: int):
         self._opacity_label.setText(f"{value}%")
         self._preview.set_opacity(value / 100.0)
@@ -721,6 +778,9 @@ class SettingsWindow(QWidget):
         else:
             self._config.overlay.theme = ""
 
+        # Waveform style
+        self._config.overlay.waveform_style = self._style_combo.currentData()
+
         # Pulse
         self._config.overlay.pulse = self._pulse_check.isChecked()
         self._config.overlay.pulse_color = self._pulse_color.name()
@@ -779,6 +839,7 @@ class SettingsWindow(QWidget):
                 "pulse": self._config.overlay.pulse,
                 "pulse_color": self._config.overlay.pulse_color,
                 "pulse_opacity": self._config.overlay.pulse_opacity,
+                "waveform_style": self._config.overlay.waveform_style.value,
             },
             "tidier": {
                 "enabled": self._config.tidier.enabled,
