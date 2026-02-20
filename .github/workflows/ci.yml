@@ -42,3 +42,51 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v
+
+  screenshots:
+    runs-on: ubuntu-latest
+    # Only run on PRs so we can commit back to the PR branch
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            portaudio19-dev libsndfile1 \
+            libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xfixes0 libgl1 libegl1
+
+      - name: Install Python dependencies
+        run: |
+          pip install --quiet \
+            PyQt6 pyyaml dacite numpy sounddevice soundfile pyperclip
+          pip install --quiet --no-deps -e .
+
+      - name: Generate screenshots
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python3 scripts/screenshots.py
+
+      - name: Commit screenshots if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add screenshots/
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update screenshots [skip ci]"
+            git push
+          else
+            echo "Screenshots unchanged, nothing to commit."
+          fi
