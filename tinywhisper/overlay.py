@@ -249,7 +249,7 @@ class WaveformOverlay(QWidget):
             return
 
         # --- Waveform bars ---
-        bar_w = max(3, (w - 24) // self.MAX_BARS - 1)
+        bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
         gap = 1
         total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
         x_start = p + (w - total_bar_w) / 2
