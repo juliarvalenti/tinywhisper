@@ -1,13 +1,22 @@
 """Dataclass config + YAML loading from ~/.config/tinywhisper/config.yaml."""
 
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 import yaml
+from dacite import Config as DaciteConfig
 from dacite import from_dict
 
 CONFIG_DIR = Path.home() / ".config" / "tinywhisper"
 CONFIG_PATH = CONFIG_DIR / "config.yaml"
+
+
+class WaveformStyle(str, Enum):
+    """Rendering style for the waveform overlay."""
+
+    BARS = "bars"
+    BRAILLE = "braille"
 
 
 @dataclass
@@ -55,6 +64,7 @@ class OverlayConfig:
     pulse: bool = True  # subtle background glow pulse
     pulse_color: str = "#FFFFFF"  # glow halo color
     pulse_opacity: float = 0.5  # glow intensity (0.0 – 1.0)
+    waveform_style: WaveformStyle = WaveformStyle.BARS  # rendering style
 
 
 SCRIPTS_DIR = CONFIG_DIR / "scripts"
@@ -84,5 +94,9 @@ def load_config() -> AppConfig:
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH) as f:
             data = yaml.safe_load(f) or {}
-        return from_dict(data_class=AppConfig, data=data)
+        return from_dict(
+            data_class=AppConfig,
+            data=data,
+            config=DaciteConfig(cast=[WaveformStyle]),
+        )
     return AppConfig()

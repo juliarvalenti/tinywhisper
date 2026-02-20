@@ -5,10 +5,10 @@ import os
 from collections import deque
 
 from PyQt6.QtCore import Qt, QRectF, QTimer
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from tinywhisper.config import OverlayConfig
+from tinywhisper.config import OverlayConfig, WaveformStyle
 
 
 def _lerp_color(c1: QColor, c2: QColor, t: float) -> QColor:
@@ -33,6 +33,35 @@ def gradient_color_at(colors: list[QColor], t: float) -> QColor:
     if idx >= len(colors) - 1:
         return QColor(colors[-1])
     return _lerp_color(colors[idx], colors[idx + 1], segment - idx)
+
+
+def _braille_bar_char(row: int, total_rows: int, amp: float) -> str:
+    """Return the braille character for one cell-row of a centered vertical bar.
+
+    Each Unicode braille cell is 2 dots wide × 4 dot-rows tall.
+    The bar is centered vertically with a height proportional to *amp* (0–1).
+
+    Bit layout (Unicode braille block U+2800+bits):
+      bit 0 = dot 1  (row 0, left)   bit 3 = dot 4  (row 0, right)
+      bit 1 = dot 2  (row 1, left)   bit 4 = dot 5  (row 1, right)
+      bit 2 = dot 3  (row 2, left)   bit 5 = dot 6  (row 2, right)
+      bit 6 = dot 7  (row 3, left)   bit 7 = dot 8  (row 3, right)
+    """
+    total_dots = total_rows * 4
+    bar_dots = amp * (total_dots - 2)  # 1-dot padding top & bottom
+    center = total_dots / 2
+    bar_top = center - bar_dots / 2
+    bar_bot = center + bar_dots / 2
+
+    # bit index for (dot_row_within_cell, left|right)
+    _LEFT = (0, 1, 2, 6)
+    _RIGHT = (3, 4, 5, 7)
+
+    bits = 0
+    for d in range(4):
+        if bar_top <= row * 4 + d < bar_bot:
+            bits |= (1 << _LEFT[d]) | (1 << _RIGHT[d])
+    return chr(0x2800 + bits)
 
 
 class WaveformOverlay(QWidget):
@@ -248,33 +277,77 @@ class WaveformOverlay(QWidget):
             painter.end()
             return
 
-        # --- Waveform bars ---
-        bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
-        gap = 1
-        total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
-        x_start = p + (w - total_bar_w) / 2
-        mid_y = p + h / 2
         n_bars = len(self._bars)
 
-        painter.setPen(Qt.PenStyle.NoPen)
+        if self._config.waveform_style is WaveformStyle.BRAILLE:
+            self._paint_braille(painter, p, w, h, n_bars)
+        else:
+            # --- Waveform bars ---
+            bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
+            gap = 1
+            total_bar_w = self.MAX_BARS * (bar_w + gap) - gap
+            x_start = p + (w - total_bar_w) / 2
+            mid_y = p + h / 2
 
-        for i, amp in enumerate(self._bars):
-            bar_h = max(3, int(amp * (h - 18)))
-            x = x_start + i * (bar_w + gap)
-            y = mid_y - bar_h / 2
+            painter.setPen(Qt.PenStyle.NoPen)
+
+            for i, amp in enumerate(self._bars):
+                bar_h = max(3, int(amp * (h - 18)))
+                x = x_start + i * (bar_w + gap)
+                y = mid_y - bar_h / 2
+
+                if self._gradient:
+                    # Position-based color: use bar index relative to total slots
+                    t = i / max(1, self.MAX_BARS - 1)
+                    color = gradient_color_at(self._gradient_colors, t)
+                    # Fade older (leftmost) bars slightly for depth
+                    if n_bars < self.MAX_BARS:
+                        age = 1.0 - (i / max(1, n_bars))
+                        color.setAlpha(int(255 * (0.5 + 0.5 * (1.0 - age))))
+                    painter.setBrush(color)
+                else:
+                    painter.setBrush(self._color)
+
+                painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 1.5, 1.5)
+
+        painter.end()
+
+    # ── Braille renderer ─────────────────────────────────────────────────
+
+    def _paint_braille(self, painter: QPainter, p: int, w: int, h: int, n_bars: int) -> None:
+        """Render the waveform as a grid of Unicode braille dot characters."""
+        font = QFont("Menlo")
+        font.setPixelSize(max(10, h // 4))
+        painter.setFont(font)
+        fm = QFontMetricsF(font)
+
+        char_h = fm.height()
+        n_rows = max(1, round(h / char_h))
+
+        # Use the same column spacing as the bar renderer so all MAX_BARS columns
+        # fill the full available width — chars may overlap slightly but that's fine.
+        col_w = max(4, (w - 16) // self.MAX_BARS)
+        total_w = self.MAX_BARS * col_w
+        x_start = p + (w - total_w) / 2
+        y_start = p + (h - n_rows * char_h) / 2 + fm.ascent()
+
+        bars_list = list(self._bars)
+        for i in range(self.MAX_BARS):
+            if i >= len(bars_list):
+                continue
+            amp = bars_list[i]
 
             if self._gradient:
-                # Position-based color: use bar index relative to total slots
                 t = i / max(1, self.MAX_BARS - 1)
                 color = gradient_color_at(self._gradient_colors, t)
-                # Fade older (leftmost) bars slightly for depth
                 if n_bars < self.MAX_BARS:
                     age = 1.0 - (i / max(1, n_bars))
                     color.setAlpha(int(255 * (0.5 + 0.5 * (1.0 - age))))
-                painter.setBrush(color)
+                painter.setPen(QPen(color))
             else:
-                painter.setBrush(self._color)
+                painter.setPen(QPen(self._color))
 
-            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 1.5, 1.5)
-
-        painter.end()
+            x = int(x_start + i * col_w)
+            for row in range(n_rows):
+                ch = _braille_bar_char(row, n_rows, amp)
+                painter.drawText(x, int(y_start + row * char_h), ch)
