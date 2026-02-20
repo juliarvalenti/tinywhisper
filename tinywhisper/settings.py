@@ -64,6 +64,7 @@ class WaveformPreview(QWidget):
     """Animated waveform preview that reflects current settings."""
 
     MAX_BARS = 60
+    MAX_BRAILLE_BARS = 100
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -155,17 +156,18 @@ class WaveformPreview(QWidget):
             char_h = fm.height()
             n_rows = max(1, round(h / char_h))
 
-            col_w = max(4, (w - 16) // self.MAX_BARS)
-            total_w = self.MAX_BARS * col_w
+            n_cols = self.MAX_BRAILLE_BARS
+            col_w = max(2, (w - 16) // n_cols)
+            total_w = n_cols * col_w
             x_start = (w - total_w) / 2
             y_start = (h - n_rows * char_h) / 2 + fm.ascent()
 
-            for i in range(self.MAX_BARS):
-                if i >= len(self._bars):
-                    continue
-                amp = self._bars[i]
+            for i in range(n_cols):
+                # map braille column index back to the preview bar array
+                src = int(i * self.MAX_BARS / n_cols)
+                amp = self._bars[src]
                 if self._gradient and self._gradient_colors:
-                    t = i / max(1, self.MAX_BARS - 1)
+                    t = i / max(1, n_cols - 1)
                     color = gradient_color_at(self._gradient_colors, t)
                     painter.setPen(QPen(color))
                 else:
