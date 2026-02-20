@@ -2,19 +2,26 @@
 
 import math
 import random
+from pathlib import Path
 
+import yaml
 from PyQt6.QtCore import Qt, QRectF, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QSlider,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -23,7 +30,34 @@ from tinywhisper.config import AppConfig, CONFIG_DIR, CONFIG_PATH
 from tinywhisper.overlay import gradient_color_at
 from tinywhisper.themes import THEMES, THEME_ORDER
 
-import yaml
+# ---------------------------------------------------------------------------
+# Prompt script helpers
+# ---------------------------------------------------------------------------
+
+# Scripts live as real files in tinywhisper/scripts/ and are copied to
+# ~/.config/tinywhisper/scripts/ at startup.  Settings just stores the path.
+# Known script names — checked against the destination dir to avoid touching
+# the bundle path (which lives under ~/Documents/) on every launch.
+_BUNDLED_SCRIPT_NAMES = ["claude-context.py"]
+
+
+def _seed_example_scripts(scripts_dir: Path) -> None:
+    """Copy bundled prompt scripts to scripts_dir if they don't exist yet.
+
+    We check destinations first so we never access the bundle path (which may
+    be under ~/Documents/) once all scripts are already seeded.
+    """
+    missing = [n for n in _BUNDLED_SCRIPT_NAMES if not (scripts_dir / n).exists()]
+    if not missing:
+        return
+    import shutil
+    bundle_dir = Path(__file__).parent / "scripts"
+    for name in missing:
+        src = bundle_dir / name
+        dst = scripts_dir / name
+        if src.exists():
+            shutil.copy2(src, dst)
+            dst.chmod(0o755)
 
 
 class WaveformPreview(QWidget):
@@ -176,7 +210,7 @@ class SettingsWindow(QWidget):
         self._gradient_colors_raw = list(grad_colors)  # keep full list from themes
 
         self.setWindowTitle("TinyWhisper Advanced Settings")
-        self.setFixedSize(420, 820)
+        self.setFixedWidth(420)
         self.setWindowFlags(
             Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint
         )
@@ -397,7 +431,29 @@ class SettingsWindow(QWidget):
             self._tidier_model_combo.setCurrentIndex(0)
         layout.addWidget(self._tidier_model_combo)
 
-        layout.addWidget(QLabel("Prompt (leave blank for default)"))
+        # ── Prompt mode toggle ───────────────────────────────────────────────
+        mode_row = QHBoxLayout()
+        self._prompt_mode_text = QRadioButton("Text")
+        self._prompt_mode_script = QRadioButton("Script")
+        self._prompt_mode_group = QButtonGroup(self)
+        self._prompt_mode_group.addButton(self._prompt_mode_text, 0)
+        self._prompt_mode_group.addButton(self._prompt_mode_script, 1)
+        use_script = bool(config.tidier.prompt_script)
+        self._prompt_mode_text.setChecked(not use_script)
+        self._prompt_mode_script.setChecked(use_script)
+        mode_row.addWidget(QLabel("Prompt mode"))
+        mode_row.addStretch()
+        mode_row.addWidget(self._prompt_mode_text)
+        mode_row.addWidget(self._prompt_mode_script)
+        layout.addLayout(mode_row)
+
+        # Stacked widget — page 0 = text, page 1 = script
+        self._prompt_stack = QStackedWidget()
+
+        # Page 0: text prompt
+        text_page = QWidget()
+        text_layout = QVBoxLayout(text_page)
+        text_layout.setContentsMargins(0, 0, 0, 0)
         self._tidier_prompt = QPlainTextEdit()
         self._tidier_prompt.setFixedHeight(72)
         self._tidier_prompt.setPlainText(config.tidier.prompt)
@@ -405,7 +461,49 @@ class SettingsWindow(QWidget):
             "Fix capitalization and punctuation, remove filler words. "
             "Return only the cleaned text."
         )
-        layout.addWidget(self._tidier_prompt)
+        text_layout.addWidget(self._tidier_prompt)
+        text_hint = QLabel("Leave blank to use the built-in default prompt.")
+        text_hint.setStyleSheet("color: #888; font-size: 11px;")
+        text_layout.addWidget(text_hint)
+        self._prompt_stack.addWidget(text_page)
+
+        # Page 1: script
+        script_page = QWidget()
+        script_layout = QVBoxLayout(script_page)
+        script_layout.setContentsMargins(0, 0, 0, 0)
+        script_path_row = QHBoxLayout()
+        self._tidier_script = QLineEdit()
+        self._tidier_script.setText(config.tidier.prompt_script)
+        self._tidier_script.setPlaceholderText(
+            "~/.config/tinywhisper/scripts/my-script.sh"
+        )
+        script_path_row.addWidget(self._tidier_script)
+        self._browse_script_btn = QPushButton("Browse…")
+        self._browse_script_btn.setFixedWidth(72)
+        self._browse_script_btn.clicked.connect(self._browse_script)
+        script_path_row.addWidget(self._browse_script_btn)
+        script_layout.addLayout(script_path_row)
+        script_hint = QLabel(
+            "The script receives the transcription via <b>$TW_TEXT</b> and "
+            "must print the LLM system prompt to stdout. "
+            "Supported: <b>.sh</b> (bash), <b>.py</b> (python3), <b>.js</b> (node). "
+            "Exit non-zero or print nothing to fall back to the built-in default."
+        )
+        script_hint.setWordWrap(True)
+        script_hint.setStyleSheet("color: #888; font-size: 11px;")
+        script_layout.addWidget(script_hint)
+        scripts_row = QHBoxLayout()
+        self._view_scripts_btn = QPushButton("View Scripts Folder")
+        self._view_scripts_btn.clicked.connect(self._open_scripts_folder)
+        scripts_row.addWidget(self._view_scripts_btn)
+        scripts_row.addStretch()
+        script_layout.addLayout(scripts_row)
+        self._prompt_stack.addWidget(script_page)
+
+        self._prompt_stack.setCurrentIndex(1 if use_script else 0)
+        layout.addWidget(self._prompt_stack)
+
+        self._prompt_mode_group.idToggled.connect(self._on_prompt_mode_toggled)
 
         self._on_tidier_toggled(config.tidier.enabled)
 
@@ -475,9 +573,32 @@ class SettingsWindow(QWidget):
 
     # ── Tidier ────────────────────────────────────────────────────────────
 
+    def _on_prompt_mode_toggled(self, btn_id: int, checked: bool):
+        if checked:
+            self._prompt_stack.setCurrentIndex(btn_id)
+
+    def _browse_script(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Prompt Script",
+            str(Path.home() / ".config" / "tinywhisper" / "scripts"),
+            "Scripts (*.sh *.py *.js);;All Files (*)",
+        )
+        if path:
+            self._tidier_script.setText(path)
+
     def _on_tidier_toggled(self, enabled: bool):
         self._tidier_model_combo.setEnabled(enabled)
-        self._tidier_prompt.setEnabled(enabled)
+        self._prompt_mode_text.setEnabled(enabled)
+        self._prompt_mode_script.setEnabled(enabled)
+        self._prompt_stack.setEnabled(enabled)
+
+    def _open_scripts_folder(self):
+        import subprocess
+        from tinywhisper.config import SCRIPTS_DIR
+        SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        _seed_example_scripts(SCRIPTS_DIR)
+        subprocess.Popen(["open", str(SCRIPTS_DIR)])
 
     # ── Overlay callbacks ─────────────────────────────────────────────────
 
@@ -621,7 +742,12 @@ class SettingsWindow(QWidget):
         # Tidier
         self._config.tidier.enabled = self._tidier_enabled.isChecked()
         self._config.tidier.model = self._tidier_model_combo.currentText().strip()
-        self._config.tidier.prompt = self._tidier_prompt.toPlainText().strip()
+        if self._prompt_mode_text.isChecked():
+            self._config.tidier.prompt = self._tidier_prompt.toPlainText().strip()
+            self._config.tidier.prompt_script = ""
+        else:
+            self._config.tidier.prompt = ""
+            self._config.tidier.prompt_script = self._tidier_script.text().strip()
 
         # Write config to disk
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -658,6 +784,7 @@ class SettingsWindow(QWidget):
                 "enabled": self._config.tidier.enabled,
                 "model": self._config.tidier.model,
                 "prompt": self._config.tidier.prompt,
+                "prompt_script": self._config.tidier.prompt_script,
                 "max_tokens": self._config.tidier.max_tokens,
             },
         }

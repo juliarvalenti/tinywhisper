@@ -57,11 +57,15 @@ class OverlayConfig:
     pulse_opacity: float = 0.5  # glow intensity (0.0 – 1.0)
 
 
+SCRIPTS_DIR = CONFIG_DIR / "scripts"
+
+
 @dataclass
 class TidierConfig:
     enabled: bool = False
     model: str = "mlx-community/Qwen3-1.7B-4bit"
-    prompt: str = ""  # empty = use default prompt
+    prompt: str = ""          # used when prompt_script is empty
+    prompt_script: str = "~/.config/tinywhisper/scripts/claude-context.py"
     max_tokens: int = 512
 
 
