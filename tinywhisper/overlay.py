@@ -68,6 +68,7 @@ class WaveformOverlay(QWidget):
     """A frameless, transparent, always-on-top overlay with gradient waveform."""
 
     MAX_BARS = 50
+    MAX_BRAILLE_BARS = 100  # denser buffer used in braille mode
     _AGC_DECAY = 0.995  # per-frame decay at ~30fps → peak halves in ~4.6s
     _GLOW_PAD = 48  # extra pixels on each side for pulse glow
 
@@ -75,6 +76,7 @@ class WaveformOverlay(QWidget):
         super().__init__(parent)
         self._config = config
         self._bars: deque[float] = deque(maxlen=self.MAX_BARS)
+        self._braille_bars: deque[float] = deque(maxlen=self.MAX_BRAILLE_BARS)
         self._agc_peak: float = 0.0
         self._pulse_phase: float = 0.0
         self._color = QColor(config.color)
@@ -185,6 +187,7 @@ class WaveformOverlay(QWidget):
     def showEvent(self, a0):  # type: ignore[override]
         super().showEvent(a0)
         self._bars.clear()
+        self._braille_bars.clear()
         self._agc_peak = 0.0
         self._pulse_phase = 0.0
         if self._follow:
@@ -203,6 +206,7 @@ class WaveformOverlay(QWidget):
         floor = 0.005
         normalized = amplitude / max(self._agc_peak, floor)
         self._bars.append(min(normalized, 1.0))
+        self._braille_bars.append(min(normalized, 1.0))
         self._pulse_phase += 0.08
         self.update()
 
@@ -280,7 +284,7 @@ class WaveformOverlay(QWidget):
         n_bars = len(self._bars)
 
         if self._config.waveform_style is WaveformStyle.BRAILLE:
-            self._paint_braille(painter, p, w, h, n_bars)
+            self._paint_braille(painter, p, w, h)
         else:
             # --- Waveform bars ---
             bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
@@ -314,7 +318,7 @@ class WaveformOverlay(QWidget):
 
     # ── Braille renderer ─────────────────────────────────────────────────
 
-    def _paint_braille(self, painter: QPainter, p: int, w: int, h: int, n_bars: int) -> None:
+    def _paint_braille(self, painter: QPainter, p: int, w: int, h: int) -> None:
         """Render the waveform as a grid of Unicode braille dot characters."""
         font = QFont("Menlo")
         font.setPixelSize(max(10, h // 4))
@@ -324,24 +328,26 @@ class WaveformOverlay(QWidget):
         char_h = fm.height()
         n_rows = max(1, round(h / char_h))
 
-        # Use the same column spacing as the bar renderer so all MAX_BARS columns
-        # fill the full available width — chars may overlap slightly but that's fine.
-        col_w = max(4, (w - 16) // self.MAX_BARS)
-        total_w = self.MAX_BARS * col_w
+        # Braille uses its own denser buffer — pack MAX_BRAILLE_BARS columns
+        # across the full available width.
+        n_cols = self.MAX_BRAILLE_BARS
+        col_w = max(2, (w - 16) // n_cols)
+        total_w = n_cols * col_w
         x_start = p + (w - total_w) / 2
         y_start = p + (h - n_rows * char_h) / 2 + fm.ascent()
 
-        bars_list = list(self._bars)
-        for i in range(self.MAX_BARS):
-            if i >= len(bars_list):
+        bars_list = list(self._braille_bars)
+        n_braille = len(bars_list)
+        for i in range(n_cols):
+            if i >= n_braille:
                 continue
             amp = bars_list[i]
 
             if self._gradient:
-                t = i / max(1, self.MAX_BARS - 1)
+                t = i / max(1, n_cols - 1)
                 color = gradient_color_at(self._gradient_colors, t)
-                if n_bars < self.MAX_BARS:
-                    age = 1.0 - (i / max(1, n_bars))
+                if n_braille < n_cols:
+                    age = 1.0 - (i / max(1, n_braille))
                     color.setAlpha(int(255 * (0.5 + 0.5 * (1.0 - age))))
                 painter.setPen(QPen(color))
             else:
