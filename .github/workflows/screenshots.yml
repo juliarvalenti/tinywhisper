@@ -49,7 +49,7 @@ jobs:
           git add screenshots/
           if ! git diff --staged --quiet; then
             git commit -m "chore: update screenshots [skip ci]"
-            git push
+            git push origin HEAD:refs/heads/screenshots
           else
             echo "Screenshots unchanged, nothing to commit."
           fi
