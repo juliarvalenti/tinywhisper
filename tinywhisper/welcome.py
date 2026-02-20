@@ -448,7 +448,7 @@ class WelcomeWindow(QWidget):
         right_lay.addWidget(mit)
 
         from datetime import date
-        copy_lbl = QLabel(f"Copyright © {date.today().year} Julia Valenti")
+        copy_lbl = QLabel(f"Copyright © {date.today().year} TinyWhisper Contributors")
         copy_lbl.setFont(_TINY)
         copy_lbl.setStyleSheet("color: #888;")
         right_lay.addWidget(copy_lbl)

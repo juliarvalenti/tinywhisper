@@ -19,7 +19,7 @@ If the user asks to reset permissions (or uses `--reset-perms`):
 uv run --no-sync build_app.py --reset-perms
 ```
 
-This runs `tccutil reset All com.juliarvalenti.tinywhisper` to clear all TCC permissions, forcing macOS to re-prompt on next launch.
+This runs `tccutil reset All app.tinywhisper` to clear all TCC permissions, forcing macOS to re-prompt on next launch.
 
 ## Launch
 
@@ -44,6 +44,6 @@ open /Applications/TinyWhisper.app
 
 - If permissions are lost after rebuild, re-grant them in System Settings > Privacy & Security
 - If the app won't launch from Finder, it may already be running (check menu bar). Kill with `pkill -f TinyWhisper` first.
-- To reset all permissions: `tccutil reset All com.juliarvalenti.tinywhisper`
+- To reset all permissions: `tccutil reset All app.tinywhisper`
 - Crash on Finder launch? Check `~/.config/tinywhisper/tinywhisper.log` — Python exceptions are captured there even when launched without a terminal
 - Icon not showing in Finder? Run: `killall Finder; killall Dock` and `/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f /Applications/TinyWhisper.app`

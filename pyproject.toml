@@ -47,7 +47,7 @@ markers = ["build: tests that compile the .app bundle (slow)"]
 include = ["tinywhisper*"]
 
 [tool.setuptools.package-data]
-tinywhisper = ["*.jpg", "*.png", "scripts/*.py", "scripts/*.sh", "scripts/*.js", "scripts/*.md"]
+tinywhisper = ["*.jpg", "*.png", "scripts/*.py", "scripts/*.sh", "scripts/*.js"]
 
 [project.urls]
 Homepage = "https://github.com/juliarvalenti/tinywhisper"
