@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+from pathlib import Path
 
 from tinywhisper.config import TidierConfig
 
@@ -20,10 +23,52 @@ class Tidier:
 
     def __init__(self, config: TidierConfig):
         self._model_name = config.model
-        self._prompt = config.prompt or DEFAULT_PROMPT
+        self._static_prompt = config.prompt or DEFAULT_PROMPT
+        self._prompt_script = config.prompt_script
         self._max_tokens = config.max_tokens
         self._model = None
         self._tokenizer = None
+
+    def _run_script(self, script: Path, text: str) -> str | None:
+        """Run a prompt script and return its stdout, or None on failure.
+
+        Supports .sh (bash), .py (python3), and .js (node) files.
+        If the file is executable it is invoked directly; otherwise the
+        appropriate interpreter is called based on the file extension.
+        """
+        env = {**os.environ, "TW_TEXT": text}
+        suffix = script.suffix.lower()
+
+        if os.access(script, os.X_OK):
+            cmd = [str(script)]
+        elif suffix == ".py":
+            cmd = ["python3", str(script)]
+        elif suffix == ".js":
+            cmd = ["node", str(script)]
+        else:
+            cmd = ["bash", str(script)]
+
+        try:
+            r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=15)
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+            log.warning("Prompt script exited %d: %s", r.returncode, r.stderr[:300])
+        except Exception as e:
+            log.warning("Prompt script error: %s", e)
+        return None
+
+    def _system_prompt(self, text: str) -> str:
+        """Return the system prompt — script output, static prompt, or default."""
+        if self._prompt_script:
+            script = Path(self._prompt_script).expanduser()
+            if script.exists():
+                result = self._run_script(script, text)
+                if result:
+                    return result
+                log.warning("Prompt script failed — falling back to static prompt")
+            else:
+                log.warning("Prompt script not found: %s — falling back to static prompt", script)
+        return self._static_prompt
 
     def load(self):
         """Pre-load the model and tokenizer into memory."""
@@ -44,7 +89,7 @@ class Tidier:
         from mlx_lm import generate  # pyright: ignore[reportMissingImports]
 
         messages = [
-            {"role": "system", "content": self._prompt},
+            {"role": "system", "content": self._system_prompt(text)},
             {"role": "user", "content": text},
         ]
 

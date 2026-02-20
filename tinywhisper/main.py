@@ -8,8 +8,9 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
-from tinywhisper.config import load_config
+from tinywhisper.config import load_config, SCRIPTS_DIR
 from tinywhisper.app import TinyWhisperApp
+from tinywhisper.settings import _seed_example_scripts
 
 
 LOG_PATH = Path.home() / ".config" / "tinywhisper" / "tinywhisper.log"
@@ -43,6 +44,10 @@ def main():
     )
     try:
         import os
+        # Seed bundled scripts (no-op if they already exist)
+        SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        _seed_example_scripts(SCRIPTS_DIR)
+
         config = load_config()
 
         # Extend PATH for .app bundles that don't inherit shell PATH
