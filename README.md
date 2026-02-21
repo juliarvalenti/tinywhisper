@@ -14,6 +14,8 @@ Runs entirely on-device using [MLX](https://github.com/ml-explore/mlx) — no cl
 |:-:|:-:|:-:|
 | ![Welcome screen](screenshots/welcome.png) | ![Settings screen](screenshots/settings.png) | ![Waveform](screenshots/waveform.png) |
 
+![Waveform themes](screenshots/themes.png)
+
 ## Features
 
 - **Fast local transcription** — Parakeet TDT 0.6b via MLX (~70x realtime)

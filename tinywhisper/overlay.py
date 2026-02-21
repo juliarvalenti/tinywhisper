@@ -5,7 +5,7 @@ import os
 from collections import deque
 
 from PyQt6.QtCore import Qt, QRectF, QTimer
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from tinywhisper.config import OverlayConfig, WaveformStyle
@@ -34,34 +34,6 @@ def gradient_color_at(colors: list[QColor], t: float) -> QColor:
         return QColor(colors[-1])
     return _lerp_color(colors[idx], colors[idx + 1], segment - idx)
 
-
-def _braille_bar_char(row: int, total_rows: int, amp: float) -> str:
-    """Return the braille character for one cell-row of a centered vertical bar.
-
-    Each Unicode braille cell is 2 dots wide × 4 dot-rows tall.
-    The bar is centered vertically with a height proportional to *amp* (0–1).
-
-    Bit layout (Unicode braille block U+2800+bits):
-      bit 0 = dot 1  (row 0, left)   bit 3 = dot 4  (row 0, right)
-      bit 1 = dot 2  (row 1, left)   bit 4 = dot 5  (row 1, right)
-      bit 2 = dot 3  (row 2, left)   bit 5 = dot 6  (row 2, right)
-      bit 6 = dot 7  (row 3, left)   bit 7 = dot 8  (row 3, right)
-    """
-    total_dots = total_rows * 4
-    bar_dots = amp * (total_dots - 2)  # 1-dot padding top & bottom
-    center = total_dots / 2
-    bar_top = center - bar_dots / 2
-    bar_bot = center + bar_dots / 2
-
-    # bit index for (dot_row_within_cell, left|right)
-    _LEFT = (0, 1, 2, 6)
-    _RIGHT = (3, 4, 5, 7)
-
-    bits = 0
-    for d in range(4):
-        if bar_top <= row * 4 + d < bar_bot:
-            bits |= (1 << _LEFT[d]) | (1 << _RIGHT[d])
-    return chr(0x2800 + bits)
 
 
 class WaveformOverlay(QWidget):
@@ -316,28 +288,39 @@ class WaveformOverlay(QWidget):
 
         painter.end()
 
-    # ── Braille renderer ─────────────────────────────────────────────────
+    # ── Dot grid renderer ────────────────────────────────────────────────
+
+    _DOT_RADIUS = 1.5   # px
+    _DOT_GAP_V = 2.5    # vertical gap between dot centres beyond diameter
+    _DOT_GAP_H = 2.0    # horizontal gap between columns beyond diameter
 
     def _paint_braille(self, painter: QPainter, p: int, w: int, h: int) -> None:
-        """Render the waveform as a grid of Unicode braille dot characters."""
-        font = QFont("Menlo")
-        font.setPixelSize(max(10, h // 4))
-        painter.setFont(font)
-        fm = QFontMetricsF(font)
+        """Render the waveform as a grid of drawn dots — no fonts involved."""
+        r = self._DOT_RADIUS
+        diameter = r * 2
+        min_step_v = diameter + self._DOT_GAP_V
+        min_step_h = diameter + self._DOT_GAP_H
 
-        char_h = fm.height()
-        n_rows = max(1, round(h / char_h))
+        margin_v = 8
+        margin_h = 8
+        usable_h = h - margin_v * 2
+        usable_w = w - margin_h * 2
 
-        # Braille uses its own denser buffer — pack MAX_BRAILLE_BARS columns
-        # across the full available width.
-        n_cols = self.MAX_BRAILLE_BARS
-        col_w = max(2, (w - 16) // n_cols)
-        total_w = n_cols * col_w
-        x_start = p + (w - total_w) / 2
-        y_start = p + (h - n_rows * char_h) / 2 + fm.ascent()
+        # How many dots fit? Then stretch spacing to fill exactly.
+        n_rows = max(1, int(usable_h // min_step_v))
+        n_cols = max(1, min(self.MAX_BRAILLE_BARS, int(usable_w // min_step_h)))
+        step_v = usable_h / n_rows
+        step_h = usable_w / n_cols
+
+        # Grid starts flush with the margin — no centering gap.
+        x0 = p + margin_h
+        y0 = p + margin_v
 
         bars_list = list(self._braille_bars)
         n_braille = len(bars_list)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+
         for i in range(n_cols):
             if i >= n_braille:
                 continue
@@ -345,15 +328,29 @@ class WaveformOverlay(QWidget):
 
             if self._gradient:
                 t = i / max(1, n_cols - 1)
-                color = gradient_color_at(self._gradient_colors, t)
+                base_color = gradient_color_at(self._gradient_colors, t)
                 if n_braille < n_cols:
                     age = 1.0 - (i / max(1, n_braille))
-                    color.setAlpha(int(255 * (0.5 + 0.5 * (1.0 - age))))
-                painter.setPen(QPen(color))
+                    base_color.setAlpha(int(255 * (0.5 + 0.5 * (1.0 - age))))
             else:
-                painter.setPen(QPen(self._color))
+                base_color = QColor(self._color)
 
-            x = int(x_start + i * col_w)
+            # Determine which dot rows are inside the centered bar
+            bar_dots = amp * (n_rows - 1)
+            center = (n_rows - 1) / 2
+            bar_top = center - bar_dots / 2
+            bar_bot = center + bar_dots / 2
+
+            cx = x0 + i * step_h + r
             for row in range(n_rows):
-                ch = _braille_bar_char(row, n_rows, amp)
-                painter.drawText(x, int(y_start + row * char_h), ch)
+                dot_on = bar_top <= row <= bar_bot
+
+                if dot_on:
+                    color = QColor(base_color)
+                else:
+                    color = QColor(base_color)
+                    color.setAlpha(max(0, int(base_color.alpha() * 0.15)))
+
+                painter.setBrush(color)
+                cy = y0 + row * step_v + r
+                painter.drawEllipse(QRectF(cx - r, cy - r, diameter, diameter))
