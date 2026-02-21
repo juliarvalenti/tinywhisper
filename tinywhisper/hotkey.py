@@ -41,6 +41,8 @@ _MODIFIER_MAP = {
     "cmd": Quartz.kCGEventFlagMaskCommand,
     "command": Quartz.kCGEventFlagMaskCommand,
     "shift": Quartz.kCGEventFlagMaskShift,
+    "none": 0,
+    "": 0,
 }
 
 # Mask to isolate modifier keys we care about

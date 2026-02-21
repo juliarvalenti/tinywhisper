@@ -1,12 +1,14 @@
 """Settings window for overlay appearance with live preview."""
 
+from __future__ import annotations
+
 import math
 import random
 from pathlib import Path
 
 import yaml
 from PyQt6.QtCore import Qt, QRectF, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -19,6 +21,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QStackedWidget,
@@ -27,8 +30,9 @@ from PyQt6.QtWidgets import (
 )
 
 from tinywhisper.config import AppConfig, CONFIG_DIR, CONFIG_PATH, WaveformStyle
-from tinywhisper.overlay import _braille_bar_char, gradient_color_at
+from tinywhisper.overlay import gradient_color_at
 from tinywhisper.themes import THEMES, THEME_ORDER
+from tinywhisper.welcome import _list_input_devices
 
 # ---------------------------------------------------------------------------
 # Prompt script helpers
@@ -147,36 +151,51 @@ class WaveformPreview(QWidget):
         painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 14, 14)
 
         if self._braille:
-            # --- Braille dot waveform ---
-            font = QFont("Menlo")
-            font.setPixelSize(max(10, h // 4))
-            painter.setFont(font)
-            fm = QFontMetricsF(font)
+            # --- Dot grid waveform ---
+            r = 1.5
+            diameter = r * 2
+            min_step_v = diameter + 2.5
+            min_step_h = diameter + 2.0
 
-            char_h = fm.height()
-            n_rows = max(1, round(h / char_h))
+            margin_v = 8
+            margin_h = 8
+            usable_h = h - margin_v * 2
+            usable_w = w - margin_h * 2
 
-            n_cols = self.MAX_BRAILLE_BARS
-            col_w = max(2, (w - 16) // n_cols)
-            total_w = n_cols * col_w
-            x_start = (w - total_w) / 2
-            y_start = (h - n_rows * char_h) / 2 + fm.ascent()
+            n_rows = max(1, int(usable_h // min_step_v))
+            n_cols = max(1, min(self.MAX_BRAILLE_BARS, int(usable_w // min_step_h)))
+            step_v = usable_h / n_rows
+            step_h = usable_w / n_cols
+
+            x0 = float(margin_h)
+            y0 = float(margin_v)
+
+            painter.setPen(Qt.PenStyle.NoPen)
 
             for i in range(n_cols):
-                # map braille column index back to the preview bar array
                 src = int(i * self.MAX_BARS / n_cols)
                 amp = self._bars[src]
+
                 if self._gradient and self._gradient_colors:
                     t = i / max(1, n_cols - 1)
-                    color = gradient_color_at(self._gradient_colors, t)
-                    painter.setPen(QPen(color))
+                    base_color = gradient_color_at(self._gradient_colors, t)
                 else:
-                    painter.setPen(QPen(self._color))
+                    base_color = QColor(self._color)
 
-                x = int(x_start + i * col_w)
+                bar_dots = amp * (n_rows - 1)
+                center = (n_rows - 1) / 2
+                bar_top = center - bar_dots / 2
+                bar_bot = center + bar_dots / 2
+
+                cx = x0 + i * step_h + r
                 for row in range(n_rows):
-                    ch = _braille_bar_char(row, n_rows, amp)
-                    painter.drawText(x, int(y_start + row * char_h), ch)
+                    dot_on = bar_top <= row <= bar_bot
+                    color = QColor(base_color)
+                    if not dot_on:
+                        color.setAlpha(max(0, int(base_color.alpha() * 0.15)))
+                    painter.setBrush(color)
+                    cy = y0 + row * step_v + r
+                    painter.drawEllipse(QRectF(cx - r, cy - r, diameter, diameter))
         else:
             # --- Rectangular bar waveform ---
             bar_w = max(3, (w - 16) // self.MAX_BARS - 1)
@@ -220,23 +239,246 @@ def _make_color_btn(color: QColor, callback) -> QPushButton:
     return btn
 
 
+# ---------------------------------------------------------------------------
+# Hotkey recorder widget
+# ---------------------------------------------------------------------------
+
+class HotkeyRecorder(QWidget):
+    """Click-to-record keyboard shortcut widget.
+
+    Shows the current binding as a pill tag.  Click to enter recording mode,
+    then press any modifier + key combo.  Escape cancels.
+    """
+
+    binding_changed = pyqtSignal(str, str)  # modifier, key
+
+    # On macOS, Qt maps Cmd → MetaModifier and Option → AltModifier.
+    _MOD_PRIORITY: list[tuple[Qt.KeyboardModifier, str]] = [
+        (Qt.KeyboardModifier.MetaModifier, "cmd"),
+        (Qt.KeyboardModifier.AltModifier, "option"),
+        (Qt.KeyboardModifier.ControlModifier, "ctrl"),
+        (Qt.KeyboardModifier.ShiftModifier, "shift"),
+    ]
+    _MOD_DISPLAY = {"option": "⌥", "ctrl": "⌃", "cmd": "⌘", "shift": "⇧", "none": ""}
+
+    # Keys that can be bound without a modifier (F-keys + special keys)
+    _BARE_KEY_CODES: frozenset[int] = frozenset({
+        int(Qt.Key.Key_F1),  int(Qt.Key.Key_F2),  int(Qt.Key.Key_F3),
+        int(Qt.Key.Key_F4),  int(Qt.Key.Key_F5),  int(Qt.Key.Key_F6),
+        int(Qt.Key.Key_F7),  int(Qt.Key.Key_F8),  int(Qt.Key.Key_F9),
+        int(Qt.Key.Key_F10), int(Qt.Key.Key_F11), int(Qt.Key.Key_F12),
+        int(Qt.Key.Key_Space), int(Qt.Key.Key_Tab),
+        int(Qt.Key.Key_Return), int(Qt.Key.Key_Enter),
+        int(Qt.Key.Key_Backspace),
+    })
+
+    # Modifier-only key codes — don't commit when these are pressed alone
+    _MODIFIER_KEY_CODES: frozenset[int] = frozenset({
+        int(Qt.Key.Key_Alt),
+        int(Qt.Key.Key_Control),
+        int(Qt.Key.Key_Meta),
+        int(Qt.Key.Key_Shift),
+        int(Qt.Key.Key_AltGr),
+        int(Qt.Key.Key_CapsLock),
+    })
+
+    # Qt key code → config key string (must match hotkey.py _VKEY_MAP)
+    # Populated by _build_qt_key_map() below the class definition.
+    _QT_TO_CONFIG: dict[int, str] = {}
+
+    _STYLE_IDLE = (
+        "HotkeyRecorder {"
+        "  background: rgba(255,255,255,0.07);"
+        "  border: 1px solid rgba(255,255,255,0.20);"
+        "  border-radius: 8px;"
+        "}"
+        "HotkeyRecorder:hover {"
+        "  background: rgba(255,255,255,0.11);"
+        "  border: 1px solid rgba(255,255,255,0.35);"
+        "}"
+    )
+    _STYLE_RECORDING = (
+        "HotkeyRecorder {"
+        "  background: rgba(255,107,107,0.15);"
+        "  border: 2px solid #FF6B6B;"
+        "  border-radius: 8px;"
+        "}"
+    )
+
+    def __init__(self, modifier: str, key: str, parent=None):
+        super().__init__(parent)
+        self._modifier = modifier
+        self._key = key
+        self._recording = False
+
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(38)
+        self.setMinimumWidth(180)
+
+        inner = QHBoxLayout(self)
+        inner.setContentsMargins(12, 4, 12, 4)
+        self._label = QLabel()
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setStyleSheet("font-size: 14px; letter-spacing: 1px;")
+        inner.addWidget(self._label)
+
+        self._refresh()
+
+    def get_modifier(self) -> str:
+        return self._modifier
+
+    def get_key(self) -> str:
+        return self._key
+
+    def _binding_text(self) -> str:
+        sym = self._MOD_DISPLAY.get(self._modifier, self._modifier.capitalize())
+        key = self._key.upper() if len(self._key) == 1 else self._key.capitalize()
+        return f"{sym}  {key}".strip() if sym else key
+
+    def _refresh(self):
+        if self._recording:
+            self._label.setText("Press shortcut…")
+            self.setStyleSheet(self._STYLE_RECORDING)
+        else:
+            self._label.setText(self._binding_text())
+            self.setStyleSheet(self._STYLE_IDLE)
+
+    def mousePressEvent(self, a0):  # type: ignore[override]
+        if not self._recording:
+            self._recording = True
+            self._refresh()
+            self.grabKeyboard()
+        super().mousePressEvent(a0)
+
+    def keyPressEvent(self, a0):  # type: ignore[override]
+        if not self._recording or a0 is None:
+            return
+
+        key_int = int(a0.key())
+
+        if key_int == int(Qt.Key.Key_Escape):
+            self._cancel()
+            return
+
+        # Bare modifier press — show partial feedback and keep waiting
+        if key_int in self._MODIFIER_KEY_CODES:
+            mods = a0.modifiers()
+            for flag, name in self._MOD_PRIORITY:
+                if mods & flag:
+                    self._label.setText(
+                        f"{self._MOD_DISPLAY.get(name, name)}  …"
+                    )
+                    break
+            return
+
+        config_key = self._QT_TO_CONFIG.get(key_int)
+        if config_key is None:
+            return  # unsupported key — ignore
+
+        mods = a0.modifiers()
+        primary_mod: str | None = None
+        for flag, name in self._MOD_PRIORITY:
+            if mods & flag:
+                primary_mod = name
+                break
+
+        # Letters and digits require a modifier; F-keys and special keys don't
+        if primary_mod is None:
+            if key_int not in self._BARE_KEY_CODES:
+                self._label.setText("Hold a modifier key…")
+                return
+            primary_mod = "none"
+
+        self._modifier = primary_mod
+        self._key = config_key
+        self._commit()
+
+    def focusOutEvent(self, a0):  # type: ignore[override]
+        if self._recording:
+            self._cancel()
+        super().focusOutEvent(a0)
+
+    def _cancel(self):
+        self._recording = False
+        self.releaseKeyboard()
+        self._refresh()
+
+    def _commit(self):
+        self._recording = False
+        self.releaseKeyboard()
+        self._refresh()
+        self.binding_changed.emit(self._modifier, self._key)
+
+
+def _build_qt_key_map() -> dict[int, str]:
+    """Build the Qt key-code → config key-string map for HotkeyRecorder."""
+    m: dict[int, str] = {
+        int(Qt.Key.Key_Space): "space",
+        int(Qt.Key.Key_Tab): "tab",
+        int(Qt.Key.Key_Return): "enter",
+        int(Qt.Key.Key_Enter): "enter",
+        int(Qt.Key.Key_Backspace): "backspace",
+        int(Qt.Key.Key_F1): "f1",   int(Qt.Key.Key_F2): "f2",
+        int(Qt.Key.Key_F3): "f3",   int(Qt.Key.Key_F4): "f4",
+        int(Qt.Key.Key_F5): "f5",   int(Qt.Key.Key_F6): "f6",
+        int(Qt.Key.Key_F7): "f7",   int(Qt.Key.Key_F8): "f8",
+        int(Qt.Key.Key_F9): "f9",   int(Qt.Key.Key_F10): "f10",
+        int(Qt.Key.Key_F11): "f11", int(Qt.Key.Key_F12): "f12",
+    }
+    for c in range(ord("A"), ord("Z") + 1):
+        m[c] = chr(c).lower()
+    for c in range(ord("0"), ord("9") + 1):
+        m[c] = chr(c)
+    return m
+
+
+HotkeyRecorder._QT_TO_CONFIG = _build_qt_key_map()
+
+
+def _page_header(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet("font-size: 15px; font-weight: bold; margin-bottom: 4px;")
+    return lbl
+
+
 class SettingsWindow(QWidget):
     """Overlay settings with sliders, color pickers, and live preview."""
 
     settings_changed = pyqtSignal()
     hotkey_changed = pyqtSignal()
 
-    MODIFIERS = ["Option", "Ctrl", "Cmd", "Shift"]
-    KEYS = ["Space", "Tab", "Enter", "F1", "F2", "F3", "F4", "F5",
-            "F6", "F7", "F8", "F9", "F10", "F11", "F12"]
+    _NAV_BTN_BASE = (
+        "QPushButton {"
+        "  text-align: left;"
+        "  padding: 10px 16px;"
+        "  border: none;"
+        "  border-radius: 0;"
+        "  background: transparent;"
+        "  font-size: 13px;"
+        "}"
+        "QPushButton:hover { background: rgba(255,255,255,0.06); }"
+    )
+    _NAV_BTN_ACTIVE = (
+        "QPushButton {"
+        "  text-align: left;"
+        "  padding: 10px 16px 10px 12px;"
+        "  border: none;"
+        "  border-left: 4px solid #FF6B6B;"
+        "  border-radius: 0;"
+        "  background: rgba(255,107,107,0.10);"
+        "  font-size: 13px;"
+        "  font-weight: bold;"
+        "}"
+    )
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self._config = config
+
+        # ── Color / gradient state ────────────────────────────────────────
         self._color = QColor(config.overlay.color)
         self._bg_color = QColor(config.overlay.bg_color)
-
-        # Gradient state
         grad_colors = config.overlay.gradient_colors
         self._grad_start = QColor(grad_colors[0]) if grad_colors else QColor("#FF6B6B")
         self._grad_end = QColor(grad_colors[-1]) if grad_colors else QColor("#8BE9FD")
@@ -245,47 +487,142 @@ class SettingsWindow(QWidget):
             if len(grad_colors) >= 3
             else None
         )
-        self._gradient_colors_raw = list(grad_colors)  # keep full list from themes
+        self._gradient_colors_raw = list(grad_colors)
+        self._pulse_color = QColor(config.overlay.pulse_color)
+
+        # Track whether we're programmatically updating controls
+        self._updating = False
 
         self.setWindowTitle("TinyWhisper Advanced Settings")
-        self.setFixedWidth(420)
+        self.setFixedWidth(640)
         self.setWindowFlags(
             Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint
         )
-
         self.setStyleSheet("""
             QComboBox, QSpinBox { padding: 4px 8px; }
             QPlainTextEdit { padding: 6px; }
             QLineEdit { padding: 4px 8px; }
         """)
 
-        layout = QVBoxLayout(self)
+        # ── Root layout: body row + footer ────────────────────────────────
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+
+        # Nav sidebar
+        self._nav_buttons: list[QPushButton] = []
+        nav_widget = self._build_nav()
+        body.addWidget(nav_widget)
+
+        # Stacked pages
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_keybindings_page(config))
+        self._stack.addWidget(self._build_overlay_page(config))
+        self._stack.addWidget(self._build_recording_page(config))
+        self._stack.addWidget(self._build_tidier_page(config))
+        body.addWidget(self._stack, 1)
+
+        root.addLayout(body, 1)
+
+        # ── Footer ────────────────────────────────────────────────────────
+        footer_widget = QWidget()
+        footer_widget.setStyleSheet("border-top: 1px solid rgba(255,255,255,0.10);")
+        footer = QHBoxLayout(footer_widget)
+        footer.setContentsMargins(16, 12, 16, 16)
+        footer.addStretch()
+        save_btn = QPushButton("Save && Apply")
+        save_btn.setFixedWidth(120)
+        save_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #0A84FF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 7px 18px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: #409CFF; }"
+            "QPushButton:pressed { background: #0060D0; }"
+        )
+        save_btn.clicked.connect(self._save)
+        footer.addWidget(save_btn)
+        root.addWidget(footer_widget)
+
+        # Default to Overlay page
+        self._nav_select(1)
+
+        self._on_tidier_toggled(config.tidier.enabled)
+
+    # ── Nav ───────────────────────────────────────────────────────────────
+
+    def _build_nav(self) -> QWidget:
+        nav = QWidget()
+        nav.setFixedWidth(180)
+        nav.setStyleSheet("background: rgba(0,0,0,0.18);")
+        layout = QVBoxLayout(nav)
+        layout.setContentsMargins(0, 16, 0, 16)
+        layout.setSpacing(0)
+
+        sections = ["Keybindings", "Overlay", "Recording", "Tidier"]
+        for i, name in enumerate(sections):
+            btn = QPushButton(name)
+            btn.setStyleSheet(self._NAV_BTN_BASE)
+            idx = i
+            btn.clicked.connect(lambda checked, n=idx: self._nav_select(n))
+            layout.addWidget(btn)
+            self._nav_buttons.append(btn)
+
+        layout.addStretch()
+        return nav
+
+    def _nav_select(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
+        for i, btn in enumerate(self._nav_buttons):
+            btn.setStyleSheet(
+                self._NAV_BTN_ACTIVE if i == index else self._NAV_BTN_BASE
+            )
+
+    # ── Page builders ─────────────────────────────────────────────────────
+
+    def _build_keybindings_page(self, config: AppConfig) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(8)
+
+        layout.addWidget(_page_header("Keybindings"))
+
+        layout.addWidget(QLabel("Toggle recording hotkey"))
+        self._hotkey_recorder = HotkeyRecorder(
+            config.hotkey.modifier,
+            config.hotkey.key,
+        )
+        layout.addWidget(self._hotkey_recorder)
+
+        hint = QLabel("Click to record a new shortcut. Hold a modifier (⌘ ⌥ ⌃ ⇧) then press any key.")
+        hint.setStyleSheet("color: #888; font-size: 11px;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        layout.addStretch()
+        return page
+
+    def _build_overlay_page(self, config: AppConfig) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(6)
 
-        # ── Hotkey ───────────────────────────────────────────────────────────
-        hk_header = QLabel("Hotkey")
-        hk_header.setStyleSheet("font-weight: bold;")
-        layout.addWidget(hk_header)
-        hotkey_row = QHBoxLayout()
-        self._mod_combo = QComboBox()
-        self._mod_combo.addItems(self.MODIFIERS)
-        self._mod_combo.setCurrentText(config.hotkey.modifier.capitalize())
-        hotkey_row.addWidget(self._mod_combo)
-        hotkey_row.addWidget(QLabel("+"))
-        self._key_combo = QComboBox()
-        self._key_combo.addItems(self.KEYS)
-        self._key_combo.setCurrentText(config.hotkey.key.capitalize())
-        hotkey_row.addWidget(self._key_combo)
-        hotkey_row.addStretch()
-        layout.addLayout(hotkey_row)
-
-        layout.addSpacing(12)
-
-        # ── Overlay ──────────────────────────────────────────────────────────
-        ov_header = QLabel("Overlay")
-        ov_header.setStyleSheet("font-weight: bold;")
-        layout.addWidget(ov_header)
+        layout.addWidget(_page_header("Overlay"))
 
         # Theme selector
         theme_row = QHBoxLayout()
@@ -294,7 +631,6 @@ class SettingsWindow(QWidget):
         self._theme_combo.addItem("Custom")
         for key in THEME_ORDER:
             self._theme_combo.addItem(THEMES[key].label, key)
-        # Set current theme
         current_theme = config.overlay.theme
         if current_theme and current_theme in THEMES:
             idx = THEME_ORDER.index(current_theme) + 1  # +1 for "Custom"
@@ -335,6 +671,7 @@ class SettingsWindow(QWidget):
         layout.addWidget(self._preview)
 
         layout.addSpacing(4)
+
         # Opacity slider
         layout.addWidget(QLabel("Opacity"))
         opacity_row = QHBoxLayout()
@@ -384,7 +721,7 @@ class SettingsWindow(QWidget):
         bg_color_row.addStretch()
         layout.addLayout(bg_color_row)
 
-        # ── Gradient ─────────────────────────────────────────────────────────
+        # ── Gradient ─────────────────────────────────────────────────────
         grad_row = QHBoxLayout()
         grad_row.addWidget(QLabel("Bar Gradient"))
         self._grad_check = QCheckBox()
@@ -405,19 +742,17 @@ class SettingsWindow(QWidget):
         self._grad_colors_row.addWidget(self._grad_end_btn)
         self._grad_colors_row.addStretch()
 
-        # Wrap in a widget so we can show/hide it
         self._grad_colors_widget = QWidget()
         self._grad_colors_widget.setLayout(self._grad_colors_row)
         self._grad_colors_widget.setVisible(config.overlay.gradient)
         layout.addWidget(self._grad_colors_widget)
 
-        # ── Pulse ────────────────────────────────────────────────────────────
+        # ── Pulse ────────────────────────────────────────────────────────
         pulse_row = QHBoxLayout()
         pulse_row.addWidget(QLabel("Background Pulse"))
         self._pulse_check = QCheckBox()
         self._pulse_check.setChecked(config.overlay.pulse)
         pulse_row.addStretch()
-        self._pulse_color = QColor(config.overlay.pulse_color)
         self._pulse_color_btn = _make_color_btn(self._pulse_color, self._pick_pulse_color)
         pulse_row.addWidget(self._pulse_color_btn)
         pulse_row.addWidget(self._pulse_check)
@@ -452,11 +787,67 @@ class SettingsWindow(QWidget):
         layout.addLayout(style_row)
         self._preview.set_braille(current_style is WaveformStyle.BRAILLE)
 
-        # ── Tidier ──────────────────────────────────────────────────────────
-        layout.addSpacing(12)
-        tidier_header = QLabel("Tidier")
-        tidier_header.setStyleSheet("font-weight: bold;")
-        layout.addWidget(tidier_header)
+        layout.addStretch()
+        scroll.setWidget(inner)
+        return scroll
+
+    def _build_recording_page(self, config: AppConfig) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(6)
+
+        layout.addWidget(_page_header("Recording"))
+
+        # Input device selector
+        layout.addWidget(QLabel("Input Device"))
+        self._device_combo_rec = QComboBox()
+        self._device_combo_rec.addItem("System Default", None)
+        current_device = config.recording.device
+        selected = 0
+        for dev in _list_input_devices():
+            self._device_combo_rec.addItem(dev["name"], dev["name"])
+            if current_device and current_device.lower() in dev["name"].lower():
+                selected = self._device_combo_rec.count() - 1
+        self._device_combo_rec.setCurrentIndex(selected)
+        layout.addWidget(self._device_combo_rec)
+
+        device_hint = QLabel(
+            "Use System Default to follow macOS routing (recommended). "
+            "Select a specific device to override."
+        )
+        device_hint.setWordWrap(True)
+        device_hint.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(device_hint)
+
+        layout.addSpacing(8)
+
+        # Sample rate
+        layout.addWidget(QLabel("Sample Rate"))
+        self._sample_rate_spin = QSpinBox()
+        self._sample_rate_spin.setRange(8000, 48000)
+        self._sample_rate_spin.setSingleStep(8000)
+        self._sample_rate_spin.setSuffix(" Hz")
+        self._sample_rate_spin.setValue(config.recording.sample_rate)
+        layout.addWidget(self._sample_rate_spin)
+
+        rate_hint = QLabel(
+            "16000 Hz required for Parakeet. Only change if you know what you're doing."
+        )
+        rate_hint.setWordWrap(True)
+        rate_hint.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(rate_hint)
+
+        layout.addStretch()
+        return page
+
+    def _build_tidier_page(self, config: AppConfig) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(6)
+
+        layout.addWidget(_page_header("Tidier"))
 
         tidier_enable_row = QHBoxLayout()
         tidier_enable_row.addWidget(QLabel("Enable LLM cleanup"))
@@ -485,7 +876,7 @@ class SettingsWindow(QWidget):
             self._tidier_model_combo.setCurrentIndex(0)
         layout.addWidget(self._tidier_model_combo)
 
-        # ── Prompt mode toggle ───────────────────────────────────────────────
+        # ── Prompt mode toggle ───────────────────────────────────────────
         mode_row = QHBoxLayout()
         self._prompt_mode_text = QRadioButton("Text")
         self._prompt_mode_script = QRadioButton("Script")
@@ -559,15 +950,8 @@ class SettingsWindow(QWidget):
 
         self._prompt_mode_group.idToggled.connect(self._on_prompt_mode_toggled)
 
-        self._on_tidier_toggled(config.tidier.enabled)
-
-        # Save button
-        save_btn = QPushButton("Save && Apply")
-        save_btn.clicked.connect(self._save)
-        layout.addWidget(save_btn)
-
-        # Track whether we're programmatically updating controls
-        self._updating = False
+        layout.addStretch()
+        return page
 
     # ── Theme handling ────────────────────────────────────────────────────
 
@@ -758,8 +1142,8 @@ class SettingsWindow(QWidget):
         # Hotkey
         old_mod = self._config.hotkey.modifier
         old_key = self._config.hotkey.key
-        self._config.hotkey.modifier = self._mod_combo.currentText().lower()
-        self._config.hotkey.key = self._key_combo.currentText().lower()
+        self._config.hotkey.modifier = self._hotkey_recorder.get_modifier()
+        self._config.hotkey.key = self._hotkey_recorder.get_key()
         hotkey_changed = (
             self._config.hotkey.modifier != old_mod
             or self._config.hotkey.key != old_key
@@ -801,6 +1185,10 @@ class SettingsWindow(QWidget):
         else:
             self._config.overlay.gradient_colors = []
 
+        # Recording
+        self._config.recording.device = self._device_combo_rec.currentData()
+        self._config.recording.sample_rate = self._sample_rate_spin.value()
+
         # Tidier
         self._config.tidier.enabled = self._tidier_enabled.isChecked()
         self._config.tidier.model = self._tidier_model_combo.currentText().strip()
@@ -824,6 +1212,7 @@ class SettingsWindow(QWidget):
                 "whisper": {"model": self._config.transcription.whisper.model},
             },
             "recording": {
+                "device": self._config.recording.device,
                 "sample_rate": self._config.recording.sample_rate,
                 "channels": self._config.recording.channels,
             },
