@@ -6,6 +6,7 @@ import logging
 import os
 import resource
 import subprocess
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
@@ -242,6 +243,9 @@ class TinyWhisperApp:
         try:
             if not self._ready:
                 return
+            # Ignore rapid retries after an audio error (prevents PortAudio crash)
+            if hasattr(self, "_error_until") and time.monotonic() < self._error_until:
+                return
             log.debug("Toggle: recording=%s", self._recording)
             if self._recording:
                 self._stop_recording()
@@ -249,7 +253,8 @@ class TinyWhisperApp:
                 self._start_recording()
         except Exception:
             log.exception("Error in hotkey toggle")
-            # Reset state so the user can try again
+            # Block retries for 2s to let PortAudio settle after a failed open
+            self._error_until = time.monotonic() + 2.0
             self._recording = False
             if self._overlay:
                 self._overlay.hide()
@@ -258,10 +263,10 @@ class TinyWhisperApp:
     def _start_recording(self):
         self._set_status("Recording…")
         log.info("Recording started")
+        self._recorder.start()  # raises before overlay shows if device unavailable
+        self._recording = True
         if self._overlay:
             self._overlay.show()
-        self._recorder.start()
-        self._recording = True
 
     def _stop_recording(self):
         self._recording = False

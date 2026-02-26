@@ -65,14 +65,26 @@ class Recorder(QObject):
             t.start()
             t.join(timeout=2.0)
 
-        self._stream = sd.InputStream(
-            samplerate=self._config.sample_rate,
-            channels=self._config.channels,
-            dtype="float32",
-            device=device,
-            callback=self._audio_callback,
-        )
-        self._stream.start()
+        try:
+            self._stream = sd.InputStream(
+                samplerate=self._config.sample_rate,
+                channels=self._config.channels,
+                dtype="float32",
+                device=device,
+                callback=self._audio_callback,
+            )
+            self._stream.start()
+        except Exception:
+            # Reinitialize PortAudio to flush any partially-initialized internal
+            # state from the failed Pa_OpenStream — without this, GC of the
+            # partial stream object can crash the process at the C level.
+            self._stream = None
+            try:
+                sd._terminate()
+                sd._initialize()
+            except Exception:
+                pass
+            raise
         self._poll_timer.start()
 
     def stop(self) -> Path:
