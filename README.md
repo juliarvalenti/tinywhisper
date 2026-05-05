@@ -4,6 +4,8 @@
 
 # TinyWhisper
 
+> **Note:** This project is no longer actively maintained.
+
 Local voice-to-text for macOS Apple Silicon. Press a hotkey, speak, and the transcription is pasted at your cursor.
 
 Runs entirely on-device using [MLX](https://github.com/ml-explore/mlx) — no cloud APIs, no subscriptions.
